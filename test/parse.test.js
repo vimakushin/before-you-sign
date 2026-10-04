@@ -95,6 +95,19 @@ test('reads a request whose types leave out the domain', () => {
   assert.equal(message.length, 3);
 });
 
+test('returns keys the type does not declare, flagged, after the declared ones', () => {
+  const text = damaged((data) => {
+    data.domain.salt = '0x01';
+    data.message.to.amount = 5;
+    data.message.cc = { name: 'Eve' };
+  });
+  const { domain, message } = parseRequest(text);
+  assert.deepEqual(domain.at(-1), { name: 'salt', value: '0x01', undeclared: true });
+  assert.deepEqual(message[1].fields.at(-1), { name: 'amount', value: '5', undeclared: true });
+  assert.deepEqual(message.at(-1), { name: 'cc', value: { name: 'Eve' }, undeclared: true });
+  assert.equal(message.length, 4);
+});
+
 test('refuses empty input', () => {
   assert.deepEqual(parseRequest(''), { ok: false, reason: 'empty' });
   assert.deepEqual(parseRequest('  \n '), { ok: false, reason: 'empty' });

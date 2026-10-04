@@ -139,14 +139,28 @@ function isJson(text) {
   }
 }
 
-// Reads the members of a struct in the order its type declares them, which is
-// the order the standard hashes them in. Keys that the type does not declare
-// are not returned.
+// Reads the members of a struct in the order its type declares them. EIP-712,
+// "Definition of encodeData": a struct is encoded as "the concatenation of
+// the encoded member values in the order that they appear in the type".
+// https://github.com/ethereum/EIPs/blob/3b3c832577ec4205d463d990d52006e299962449/EIPS/eip-712.md
+// (retrieved 2026-10-04)
+//
+// A key the type does not declare has no place in that encoding. What a given
+// wallet does when it meets one is not something the standard settles, so
+// such a key is neither explained nor dropped: it is returned after the
+// declared members, with its value as written and a flag. Dropping it was the
+// first version's behaviour; it hid part of what the person had pasted
+// without saying so.
 function readStruct(typeName, object, types) {
-  return types[typeName].map(({ name, type }) => ({
+  const members = types[typeName];
+  const declared = members.map(({ name, type }) => ({
     name,
     ...readValue(type, Object.hasOwn(object, name) ? object[name] : undefined, types),
   }));
+  const undeclared = Object.keys(object)
+    .filter((key) => !members.some(({ name }) => name === key))
+    .map((name) => ({ name, value: object[name], undeclared: true }));
+  return [...declared, ...undeclared];
 }
 
 // A value whose shape does not fit its declared type (a struct that is not an

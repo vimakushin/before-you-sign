@@ -14,7 +14,11 @@
 // Every string and every role below was read from the source named next to
 // it, at the commit in the link, on 2026-10-04.
 
-// Addresses the protocols' own libraries publish for their contracts.
+// Addresses that the protocols' own client libraries list for their
+// contracts. An address here means only that: the library names it. The lists
+// are not claimed to be complete (Seaport had versions before 1.5), and they
+// are not tied to a network: an address listed for one network is accepted on
+// any.
 //
 // Permit2 has one address on most networks and a different one on network
 // 324; both are in Uniswap's SDK:
@@ -53,7 +57,9 @@ const KNOWN = [
   {
     // There is no amount. `allowed` is a yes or no:
     // `uint wad = allowed ? uint(-1) : 0; allowance[holder][spender] = wad;`
-    // and `expiry` limits when the signature can be used, with zero switching
+    // and an allowance of that size is not reduced by spending (transferFrom
+    // subtracts only when `allowance[src][msg.sender] != uint(-1)`).
+    // `expiry` limits when the signature can be used, with zero switching
     // the check off: `require(expiry == 0 || now <= expiry)`. The domain is
     // built with `address(this)`, so here too the token is verifyingContract.
     // The file says of itself that it "was altered compared to the production
@@ -76,6 +82,11 @@ const KNOWN = [
     // `expiration` is how long the allowance lasts: IAllowanceTransfer.sol
     // describes the stored value as the "expiration at which the allowed
     // amount is no longer valid". The type strings are in PermitHash.sol.
+    //
+    // The largest amount the type can hold has a meaning of its own.
+    // IAllowanceTransfer.sol: "Setting amount to type(uint160).max sets an
+    // unlimited approval"; AllowanceTransfer.sol reduces the allowance on a
+    // transfer only `if (maxAmount != type(uint160).max)`.
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/libraries/PermitHash.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/interfaces/IAllowanceTransfer.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/AllowanceTransfer.sol
@@ -147,7 +158,8 @@ const KNOWN = [
     // joined in this order: OrderComponents, ConsiderationItem, OfferItem.
     // https://github.com/ProjectOpenSea/seaport-core/blob/523097f9cee66c15d308c900c50f336b291cda08/src/lib/ConsiderationBase.sol
     // https://github.com/ProjectOpenSea/seaport/blob/7f966fe7bd75932beb0366f6485aa720512b1259/docs/SeaportDocumentation.md
-    // Seaport 1.5 declares the same types:
+    // Seaport 1.5 declares the same types: its three type strings, at the
+    // commit the repository's tag `1.5` points to, join into the string below.
     // https://github.com/ProjectOpenSea/seaport/blob/ab3b5cb6e10580ea979d63983e409e679935c702/contracts/lib/ConsiderationBase.sol
     contracts: SEAPORT,
     kind: 'seaport-order',
@@ -172,9 +184,18 @@ const KNOWN = [
 // the signature: any contract can ask for a signature over these same types
 // and do something else with it. So for a protocol that lives at published
 // addresses, the roles are returned only when the request is addressed to one
-// of them. Otherwise the answer is { kind, otherContract: true } and no roles:
-// the message has this shape, and what that contract does with it is not
-// something we know.
+// of them. Otherwise the answer is { kind, unlistedContract: true } and no
+// roles: the message has this shape, and what will be done with the signature
+// is not something we know. The flag covers a request that names no contract
+// at all, so it says "not on the list", not "another contract".
+//
+// The contract is the domain's verifyingContract, which EIP-712 defines as
+// "the address of the contract that will verify the signature". It counts
+// only if it is part of what gets signed: declared in EIP712Domain, once, as
+// an `address`. A key that merely sits in the domain object is not hashed,
+// and a contract at some other address could accept that signature. When the
+// request declares no EIP712Domain at all, there is no declaration to hold
+// the field to, and it is taken as written.
 //
 // The rule is one-sided. An address on the list lets us name the protocol; an
 // address off the list is not a finding about that address.
@@ -191,11 +212,15 @@ export function recognise({ primaryType, types, domain }) {
 
   // An address is a number written in hexadecimal: the case of its letters
   // does not change which address it is.
-  const contract = domain.find((field) => field.name === 'verifyingContract')?.value;
-  const published =
-    typeof contract === 'string' &&
-    contracts.some((address) => address.toLowerCase() === contract.toLowerCase());
-  return published ? { kind, roles } : { kind, otherContract: true };
+  const fields = domain.filter((field) => field.name === 'verifyingContract');
+  const [contract] = fields;
+  const listed =
+    fields.length === 1 &&
+    !contract.undeclared &&
+    (contract.type === undefined || contract.type === 'address') &&
+    typeof contract.value === 'string' &&
+    contracts.some((address) => address.toLowerCase() === contract.value.toLowerCase());
+  return listed ? { kind, roles } : { kind, unlistedContract: true };
 }
 
 // EIP-712, "Definition of encodeType": the type is written as its name and
@@ -204,16 +229,18 @@ export function recognise({ primaryType, types, domain }) {
 // https://github.com/ethereum/EIPs/blob/3b3c832577ec4205d463d990d52006e299962449/EIPS/eip-712.md
 function encodeType(primaryType, types) {
   const referenced = new Set();
-  const collect = (name) => {
-    for (const { type } of types[name]) {
-      const struct = type.replace(/(\[\d*\])+$/, '');
+  const pending = [primaryType];
+  while (pending.length > 0) {
+    for (const { type } of types[pending.pop()]) {
+      // `Person[]` and `Person[2][]` both refer to the struct `Person`.
+      const bracket = type.indexOf('[');
+      const struct = bracket === -1 ? type : type.slice(0, bracket);
       if (struct !== primaryType && Object.hasOwn(types, struct) && !referenced.has(struct)) {
         referenced.add(struct);
-        collect(struct);
+        pending.push(struct);
       }
     }
-  };
-  collect(primaryType);
+  }
 
   const names = [primaryType, ...[...referenced].sort()];
 

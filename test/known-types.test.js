@@ -87,9 +87,22 @@ test('finds each role in a Permit2 request', () => {
   assert.equal(valueAt(parsed, roles.signatureDeadline), '1790072010');
 });
 
+test('gives no roles when the listed address is not part of what is signed', () => {
+  const { permit2PermitSingle: types } = published;
+  const withDomain = (EIP712Domain) =>
+    recogniseTypes('PermitSingle', { ...types, EIP712Domain }, PERMIT2);
+  const expected = { kind: 'permit2-permit-single', unlistedContract: true };
+  // The address is a key in the domain object that the domain type leaves out.
+  assert.deepEqual(withDomain([]), expected);
+  // Declared, but not as an address: a different domain, a different hash.
+  assert.deepEqual(withDomain([{ name: 'verifyingContract', type: 'string' }]), expected);
+  // Declared as an address: the published case.
+  assert.ok(withDomain([{ name: 'verifyingContract', type: 'address' }]).roles);
+});
+
 test('names the shape but gives no roles when the contract is not a published one', () => {
   for (const [kind, primaryType, types] of PUBLISHED.slice(2)) {
-    const expected = { kind, otherContract: true };
+    const expected = { kind, unlistedContract: true };
     assert.deepEqual(recogniseTypes(primaryType, types, UNPUBLISHED), expected);
     assert.deepEqual(recogniseTypes(primaryType, types), expected);
   }
@@ -97,7 +110,7 @@ test('names the shape but gives no roles when the contract is not a published on
   assert.notEqual(elsewhere, permitSingle);
   assert.deepEqual(recognise(parseRequest(elsewhere)), {
     kind: 'permit2-permit-single',
-    otherContract: true,
+    unlistedContract: true,
   });
 });
 
