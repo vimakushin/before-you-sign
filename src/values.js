@@ -35,13 +35,36 @@ export function largestOf(type) {
 }
 
 // An unsigned integer that fits its declared type, or null. A field the
-// parser flagged as not fitting its type is never read as a number, and
-// neither is a field of any other type: an address is hexadecimal digits too.
-function readUnsigned({ type, value, mismatch }) {
+// parser could not read as its type is never read as a number, and neither
+// is a field of any other type: an address is hexadecimal digits too.
+//
+function readUnsigned(field) {
+  const { type, value, unread } = field;
   const largest = largestOf(type);
   const integer = readInteger(value);
-  if (mismatch || largest === null || integer === null || integer > largest) return null;
-  return { integer, largest: integer === largest };
+  if (unread || largest === null || integer === null || integer > largest) return null;
+  const read = { integer, largest: integer === largest };
+  return losesDigits(field) ? { ...read, rounding: true } : read;
+}
+
+// Whether a field holds an integer that the request writes without quotes and
+// that JavaScript's own number cannot hold: turned into a number and back, it
+// comes out as different digits. (Not every large number does: 2^60 survives.)
+// The digits this project shows are the ones written. A wallet that reads the
+// request with ordinary JSON parsing would have the other number, so for such
+// a value what gets signed depends on the wallet. Whether any wallet reads
+// requests that way, and whether it would then sign or refuse, was not
+// checked.
+export function losesDigits({ value, bare }) {
+  const integer = bare ? readInteger(value) : null;
+  return integer !== null && BigInt(Number(integer)) !== integer;
+}
+
+// The marks every reading carries: the exact digits, whether they are the
+// largest the type holds, and `dependsOnWallet` for the case above.
+function marks({ integer, largest, rounding }) {
+  const exact = integer.toString();
+  return rounding ? { exact, largest, dependsOnWallet: true } : { exact, largest };
 }
 
 // Moves the decimal point `decimals` places to the left, exactly. No rounding
@@ -80,14 +103,12 @@ export function readAmount(field, decimals) {
   const read = readUnsigned(field);
   if (read === null) return null;
 
-  const exact = read.integer.toString();
-  if (read.largest) return { exact, largest: true };
+  if (read.largest) return marks(read);
   if (Number.isInteger(decimals) && decimals >= 0 && decimals <= MOST_DECIMALS) {
-    return { exact, largest: false, amount: withDecimals(read.integer, decimals) };
+    return { ...marks(read), amount: withDecimals(read.integer, decimals) };
   }
   return {
-    exact,
-    largest: false,
+    ...marks(read),
     assumed: ASSUMED_DECIMALS.map((guess) => ({ decimals: guess, amount: withDecimals(read.integer, guess) })),
   };
 }
@@ -101,15 +122,19 @@ const LAST_DATE = 8_640_000_000_000n;
 // seconds (Date.now() / 1000; a fraction of a second is dropped). `date` is
 // in UTC and is null when the moment is beyond what a date can express;
 // `fromNow` is in seconds and negative for a moment in the past.
+//
+// There is no "practically forever" here. Any distance chosen to mean that
+// would be a number picked out of the air. The date and the distance are
+// given as they are, and `largest` says when the field holds the largest
+// number it can: nothing later fits in it.
 export function readTime(field, now) {
   const read = readUnsigned(field);
   if (read === null) return null;
 
   const seconds = read.integer;
   return {
-    seconds: seconds.toString(),
+    ...marks(read),
     zero: seconds === 0n,
-    largest: read.largest,
     date: seconds <= LAST_DATE ? new Date(Number(seconds) * 1000).toISOString() : null,
     fromNow: (seconds - BigInt(Math.floor(now))).toString(),
   };

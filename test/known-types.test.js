@@ -95,11 +95,33 @@ function assertRolesDeclared(known, types, primaryType) {
 }
 
 test('recognises an ERC-2612 permit whatever token it is addressed to', () => {
-  for (const verifyingContract of [UNPUBLISHED, undefined]) {
-    const known = recogniseTypes('Permit', published.erc2612, { verifyingContract });
-    assert.equal(known.kind, 'erc2612-permit');
-    assertRolesDeclared(known, published.erc2612, 'Permit');
+  const token = { name: 'Any Token', version: '1', chainId: 1, verifyingContract: UNPUBLISHED };
+  const known = recogniseTypes('Permit', published.erc2612, token);
+  assert.equal(known.kind, 'erc2612-permit');
+  assertRolesDeclared(known, published.erc2612, 'Permit');
+});
+
+test('does not read the token of an ERC-2612 permit from a value that is not written as an address', () => {
+  const token = { name: 'Any Token', version: '1', chainId: 1, verifyingContract: UNPUBLISHED };
+  const notListed = { kind: 'erc2612-permit', unverified: 'domain-not-listed' };
+  for (const change of [{ verifyingContract: 12345 }, { verifyingContract: 'hello' }, { name: 5 }, { version: 1 }]) {
+    assert.deepEqual(recogniseTypes('Permit', published.erc2612, { ...token, ...change }), notListed);
   }
+});
+
+test('does not read the token of an ERC-2612 permit from a domain it cannot hold to the standard', () => {
+  const token = { name: 'Any Token', version: '1', chainId: 1, verifyingContract: UNPUBLISHED };
+  const { EIP712Domain, Permit } = published.erc2612;
+  assert.deepEqual(recogniseTypes('Permit', { Permit }, token), {
+    kind: 'erc2612-permit',
+    unverified: 'domain-not-declared',
+  });
+  // The address is in the domain object but not in the domain type.
+  const withoutContract = EIP712Domain.filter((member) => member.name !== 'verifyingContract');
+  assert.deepEqual(recogniseTypes('Permit', { Permit, EIP712Domain: withoutContract }, token), {
+    kind: 'erc2612-permit',
+    unverified: 'domain-not-listed',
+  });
 });
 
 for (const [kind, primaryType, types, EIP712Domain, domain] of LISTED) {
@@ -116,6 +138,9 @@ for (const [kind, primaryType, types, EIP712Domain, domain] of LISTED) {
 
     assert.deepEqual(withDomain(EIP712Domain, { ...domain, verifyingContract: UNPUBLISHED }), notListed);
     assert.deepEqual(withDomain(EIP712Domain, { ...domain, name: 'Other' }), notListed);
+    // A key the domain type does not declare, and a declared member with no value.
+    assert.deepEqual(withDomain(EIP712Domain, { ...domain, salt: '0x01' }), notListed);
+    assert.deepEqual(withDomain(EIP712Domain, { ...domain, chainId: undefined }), notListed);
     // The published address as a key the domain type leaves out: not signed.
     assert.deepEqual(withDomain([NAME, CHAIN], domain), notListed);
     // Declared, but not as an address: a different domain, a different hash.
@@ -134,9 +159,19 @@ test('does not accept one Seaport version at the address of another', () => {
   });
 });
 
-test('does not name DAI on a network other than the one its address is published for', () => {
+test('does not compare the chain id, which no source gives a verified value for', () => {
   const types = { ...published.dai, EIP712Domain: FULL_DOMAIN };
-  assert.deepEqual(recogniseTypes('Permit', types, { ...dai, chainId: 137 }), {
+  assert.ok(recogniseTypes('Permit', types, { ...dai, chainId: 137 }).roles);
+});
+
+test('does not take a number written without quotes for the published string', () => {
+  const seaportTypes = { ...published.seaportOrder, EIP712Domain: FULL_DOMAIN };
+  assert.deepEqual(recogniseTypes('OrderComponents', seaportTypes, seaport(1.5, SEAPORT_1_5)), {
+    kind: 'seaport-order',
+    unverified: 'domain-not-listed',
+  });
+  const daiTypes = { ...published.dai, EIP712Domain: FULL_DOMAIN };
+  assert.deepEqual(recogniseTypes('Permit', daiTypes, { ...dai, version: 1 }), {
     kind: 'dai-permit',
     unverified: 'domain-not-listed',
   });

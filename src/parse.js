@@ -2,10 +2,22 @@
 // eth_signTypedData_v4). Text in, fields out. Nothing here explains what a
 // field means or words anything for a person: this module only reads.
 //
-// The result is either { ok: true, primaryType, types, domain, message } or
-// { ok: false, reason, detail? }. A refusal is a normal result, not an
+// The result is either { parsed: true, primaryType, types, domain, message }
+// or { parsed: false, reason, detail? }. A refusal is a normal result, not an
 // exception: people paste half a request, two requests, or something that is
 // not a request at all, and each of those deserves its own answer.
+//
+// The names say what this module did and nothing about the request. `parsed`
+// means the text was read; it used to be `ok`, which reads as "the request
+// is fine", and that is a verdict this project never gives. For the same
+// reason a value whose shape does not fit its declared type (not an object
+// where a struct is declared, not a list where an array is, or absent) is
+// marked `unread`: we could not read it as that type. It is not called a
+// mismatch in the request. Only the shape is looked at here; whether a string
+// in a uint256 member is a number is decided where numbers are read. And the
+// refusals are 'unexpected-shape' (the JSON is not laid out the way this
+// parser expects a signing request to be) and 'main-type-not-found' (the type
+// named as the main one is not among the declared types).
 
 const REQUIRED = ['types', 'primaryType', 'domain', 'message'];
 
@@ -16,57 +28,58 @@ export function parseRequest(pasted) {
   const text = pasted.trim();
   if (text === '') return refuse('empty');
 
+  let asWritten;
   let data;
   try {
-    JSON.parse(text);
+    asWritten = JSON.parse(text);
     data = JSON.parse(quoteNumbers(text));
   } catch {
     return refuse(whyNotJson(text));
   }
 
-  if (!isObject(data)) return refuse('not-typed-data');
+  if (!isObject(data)) return refuse('unexpected-shape');
   for (const key of REQUIRED) {
-    if (!Object.hasOwn(data, key)) return refuse('not-typed-data', key);
+    if (!Object.hasOwn(data, key)) return refuse('unexpected-shape', key);
   }
   const { types, primaryType, domain, message } = data;
   if (!isObject(types) || !Object.values(types).every(isTypeDefinition)) {
-    return refuse('not-typed-data', 'types');
+    return refuse('unexpected-shape', 'types');
   }
-  if (typeof primaryType !== 'string') return refuse('not-typed-data', 'primaryType');
-  if (!isObject(domain)) return refuse('not-typed-data', 'domain');
-  if (!isObject(message)) return refuse('not-typed-data', 'message');
+  if (typeof primaryType !== 'string') return refuse('unexpected-shape', 'primaryType');
+  if (!isObject(domain)) return refuse('unexpected-shape', 'domain');
+  if (!isObject(message)) return refuse('unexpected-shape', 'message');
 
-  if (!Object.hasOwn(types, primaryType)) return refuse('type-not-declared', primaryType);
-
-  // The schema in EIP-712 lists EIP712Domain as a required member of `types`,
-  // and the first version of this parser refused a request without it. That
-  // was reversed: what a wallet shows does carry the declaration, but a person
-  // may bring the same request from a developer's code, where it is often left
-  // out. Refusing to read a real request costs more than reading one whose
-  // domain comes without types, so the domain is then listed as written.
-  const domainFields = Object.hasOwn(types, 'EIP712Domain')
-    ? readStruct('EIP712Domain', domain, types)
-    : Object.entries(domain).map(([name, value]) => ({ name, value }));
+  if (!Object.hasOwn(types, primaryType)) return refuse('main-type-not-found', primaryType);
 
   try {
+    // The schema in EIP-712 lists EIP712Domain as a required member of `types`,
+    // and the first version of this parser refused a request without it. That
+    // was reversed: what a wallet shows does carry the declaration, but a person
+    // may bring the same request from a developer's code, where it is often left
+    // out. Refusing to read a real request costs more than reading one whose
+    // domain comes without types, so the domain is then listed as written.
+    const domainFields = Object.hasOwn(types, 'EIP712Domain')
+      ? readStruct('EIP712Domain', domain, asWritten.domain, types)
+      : Object.keys(domain).map((name) => asIs(name, domain[name], asWritten.domain[name]));
+
     return {
-      ok: true,
+      parsed: true,
       primaryType,
       types,
       domain: domainFields,
-      message: readStruct(primaryType, message, types),
+      message: readStruct(primaryType, message, asWritten.message, types),
     };
   } catch (error) {
-    // The standard allows a struct type to refer to itself, so a message can
-    // be nested as deep as its author likes; around a thousand levels the
-    // recursive reading below runs out of stack.
+    // The standard allows a struct type to refer to itself, so a message or a
+    // domain can be nested as deep as its author likes; around a thousand
+    // levels the recursive reading below runs out of stack.
     if (error instanceof RangeError) return refuse('too-deep');
     throw error;
   }
 }
 
 function refuse(reason, detail) {
-  return detail === undefined ? { ok: false, reason } : { ok: false, reason, detail };
+  return detail === undefined ? { parsed: false, reason } : { parsed: false, reason, detail };
 }
 
 function isObject(value) {
@@ -90,6 +103,13 @@ function isTypeDefinition(members) {
 // exists to prevent, so we never let JSON.parse see a number. Every numeric
 // token is wrapped in quotes first, and the digits reach the caller exactly
 // as they were written.
+//
+// That makes a number written without quotes look like a string, and the
+// difference matters: a wallet that reads the request with ordinary JSON
+// parsing gets the rounded number, not these digits, and a number in a field
+// declared as a string is not that string. So the text is also parsed as it
+// is, for one purpose only: to see where it holds a bare number. Such a value
+// is marked `bare`.
 //
 // The pattern matches a whole string literal or a number, whichever starts
 // first, so digits inside strings are skipped over rather than touched. It is
@@ -151,34 +171,44 @@ function isJson(text) {
 // declared members, with its value as written and a flag. Dropping it was the
 // first version's behaviour; it hid part of what the person had pasted
 // without saying so.
-function readStruct(typeName, object, types) {
+//
+// `asWritten` is the same object from the parse that left numbers alone.
+function readStruct(typeName, object, asWritten, types) {
   const members = types[typeName];
-  const declared = members.map(({ name, type }) => ({
-    name,
-    ...readValue(type, Object.hasOwn(object, name) ? object[name] : undefined, types),
-  }));
+  const declared = members.map(({ name, type }) => {
+    const present = Object.hasOwn(object, name);
+    return {
+      name,
+      ...readValue(type, present ? object[name] : undefined, present ? asWritten[name] : undefined, types),
+    };
+  });
   const undeclared = Object.keys(object)
     .filter((key) => !members.some(({ name }) => name === key))
-    .map((name) => ({ name, value: object[name], undeclared: true }));
+    .map((name) => ({ ...asIs(name, object[name], asWritten[name]), undeclared: true }));
   return [...declared, ...undeclared];
+}
+
+// A value with no declared type to read it by: returned as it was written.
+function asIs(name, value, asWritten) {
+  return typeof asWritten === 'number' ? { name, value, bare: true } : { name, value };
 }
 
 // A value whose shape does not fit its declared type (a struct that is not an
 // object, an array that is not a list, a member that is absent) is returned
-// as is and flagged, instead of failing the whole request: the rest of the
-// request is still worth showing.
-function readValue(type, value, types) {
+// as is and marked `unread`, instead of failing the whole request: the rest
+// of the request is still worth showing.
+function readValue(type, value, asWritten, types) {
   const array = type.match(/^(.+)\[\d*\]$/);
   if (array) {
-    if (!Array.isArray(value)) return { type, value, mismatch: true };
-    return { type, items: value.map((item) => readValue(array[1], item, types)) };
+    if (!Array.isArray(value)) return { type, value, unread: true };
+    return { type, items: value.map((item, index) => readValue(array[1], item, asWritten[index], types)) };
   }
   if (Object.hasOwn(types, type)) {
-    if (!isObject(value)) return { type, value, mismatch: true };
-    return { type, fields: readStruct(type, value, types) };
+    if (!isObject(value)) return { type, value, unread: true };
+    return { type, fields: readStruct(type, value, asWritten, types) };
   }
   if (typeof value !== 'string' && typeof value !== 'boolean') {
-    return { type, value, mismatch: true };
+    return { type, value, unread: true };
   }
-  return { type, value };
+  return typeof asWritten === 'number' ? { type, value, bare: true } : { type, value };
 }

@@ -81,7 +81,7 @@ test('reads an amount only from an unsigned integer that fits its type', () => {
   assert.equal(readAmount({ type: 'int256', value: '5' }), null);
   assert.equal(readAmount({ type: 'uint256[]', value: '5' }), null);
   assert.equal(readAmount({ value: '5' }), null);
-  assert.equal(readAmount({ type: 'PermitDetails', value: '5', mismatch: true }), null);
+  assert.equal(readAmount({ type: 'PermitDetails', value: '5', unread: true }), null);
   assert.equal(readAmount({ type: 'uint160', value: (2n ** 256n - 1n).toString() }), null);
 });
 
@@ -106,6 +106,17 @@ test('marks the largest amount of each type and does not convert it', () => {
   assert.equal(readAmount({ type: 'uint160', value: (2n ** 160n - 2n).toString() }).largest, false);
 });
 
+test('says when what gets signed depends on how the wallet reads a bare number', () => {
+  const large = '9007199254740993';
+  assert.equal(readAmount({ type: 'uint256', value: large, bare: true }).dependsOnWallet, true);
+  assert.equal(readTime({ type: 'uint256', value: large, bare: true }, 0).dependsOnWallet, true);
+  // The same digits in quotes, and a bare number small enough to be exact, are what they say.
+  assert.equal(readAmount({ type: 'uint256', value: large }).dependsOnWallet, undefined);
+  assert.equal(readAmount({ type: 'uint256', value: '9007199254740991', bare: true }).dependsOnWallet, undefined);
+  // A large number that a JavaScript number holds exactly: 2^60.
+  assert.equal(readAmount({ type: 'uint256', value: (2n ** 60n).toString(), bare: true }).dependsOnWallet, undefined);
+});
+
 test('does not read an amount written in a notation it does not know', () => {
   assert.equal(readAmount({ type: 'uint256', value: '1e30' }), null);
   assert.equal(readAmount({ type: 'uint256', value: undefined }), null);
@@ -115,9 +126,9 @@ test('turns seconds into a date and a distance from now', () => {
   // 30 days before the allowance in the example expires.
   const now = 1792662210 - 30 * 24 * 60 * 60;
   assert.deepEqual(readTime(field('expiration'), now), {
-    seconds: '1792662210',
-    zero: false,
+    exact: '1792662210',
     largest: false,
+    zero: false,
     date: '2026-10-22T09:43:30.000Z',
     fromNow: '2592000',
   });
@@ -128,9 +139,9 @@ test('turns seconds into a date and a distance from now', () => {
 
 test('reports zero and the largest time, and gives no date where none exists', () => {
   assert.deepEqual(readTime({ type: 'uint48', value: '0' }, 100), {
-    seconds: '0',
-    zero: true,
+    exact: '0',
     largest: false,
+    zero: true,
     date: '1970-01-01T00:00:00.000Z',
     fromNow: '-100',
   });

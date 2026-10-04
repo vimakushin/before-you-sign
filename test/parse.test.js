@@ -18,13 +18,13 @@ function damaged(change) {
 
 test('reads the example from the standard', () => {
   assert.deepEqual(parseRequest(example), {
-    ok: true,
+    parsed: true,
     primaryType: 'Mail',
     types: JSON.parse(example).types,
     domain: [
       { name: 'name', type: 'string', value: 'Ether Mail' },
       { name: 'version', type: 'string', value: '1' },
-      { name: 'chainId', type: 'uint256', value: '1' },
+      { name: 'chainId', type: 'uint256', value: '1', bare: true },
       {
         name: 'verifyingContract',
         type: 'address',
@@ -63,6 +63,15 @@ test('a bare number keeps every digit', () => {
   assert.equal(chainId.value, max);
 });
 
+test('marks a number written without quotes, and only that', () => {
+  const bare = parseRequest(example).domain.find((field) => field.name === 'chainId');
+  assert.equal(bare.bare, true);
+  const quoted = parseRequest(example.replace('"chainId":1', '"chainId":"1"')).domain.find(
+    (field) => field.name === 'chainId',
+  );
+  assert.deepEqual(quoted, { name: 'chainId', type: 'uint256', value: '1' });
+});
+
 test('digits inside a string are left alone', () => {
   const text = example.replace('Hello, Bob!', 'Send 100 to \\"Bob\\" 7');
   const contents = parseRequest(text).message.find((field) => field.name === 'contents');
@@ -84,12 +93,12 @@ test('reads an array member item by item', () => {
 
 test('reads a request whose types leave out the domain', () => {
   const text = damaged((data) => delete data.types.EIP712Domain);
-  const { ok, domain, message } = parseRequest(text);
-  assert.equal(ok, true);
+  const { parsed, domain, message } = parseRequest(text);
+  assert.equal(parsed, true);
   assert.deepEqual(domain, [
     { name: 'name', value: 'Ether Mail' },
     { name: 'version', value: '1' },
-    { name: 'chainId', value: '1' },
+    { name: 'chainId', value: '1', bare: true },
     { name: 'verifyingContract', value: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC' },
   ]);
   assert.equal(message.length, 3);
@@ -103,42 +112,51 @@ test('returns keys the type does not declare, flagged, after the declared ones',
   });
   const { domain, message } = parseRequest(text);
   assert.deepEqual(domain.at(-1), { name: 'salt', value: '0x01', undeclared: true });
-  assert.deepEqual(message[1].fields.at(-1), { name: 'amount', value: '5', undeclared: true });
+  assert.deepEqual(message[1].fields.at(-1), { name: 'amount', value: '5', bare: true, undeclared: true });
   assert.deepEqual(message.at(-1), { name: 'cc', value: { name: 'Eve' }, undeclared: true });
   assert.equal(message.length, 4);
 });
 
 test('refuses empty input', () => {
-  assert.deepEqual(parseRequest(''), { ok: false, reason: 'empty' });
-  assert.deepEqual(parseRequest('  \n '), { ok: false, reason: 'empty' });
+  assert.deepEqual(parseRequest(''), { parsed: false, reason: 'empty' });
+  assert.deepEqual(parseRequest('  \n '), { parsed: false, reason: 'empty' });
 });
 
 test('refuses text that is not JSON', () => {
-  assert.deepEqual(parseRequest('Signature request'), { ok: false, reason: 'not-json' });
+  assert.deepEqual(parseRequest('Signature request'), { parsed: false, reason: 'not-json' });
 });
 
 test('refuses a request cut off at any point', () => {
   for (let length = 1; length < example.trimEnd().length; length++) {
-    assert.deepEqual(parseRequest(example.slice(0, length)), { ok: false, reason: 'truncated' });
+    assert.deepEqual(parseRequest(example.slice(0, length)), { parsed: false, reason: 'truncated' });
   }
 });
 
 test('refuses two requests pasted together', () => {
-  assert.deepEqual(parseRequest(example + example), { ok: false, reason: 'trailing-text' });
+  assert.deepEqual(parseRequest(example + example), { parsed: false, reason: 'trailing-text' });
 });
 
 test('does not name a fix that would not help', () => {
   // Brackets of different kinds do not close each other: nothing is missing here.
   const mispaired = example.trimEnd().slice(0, -1) + ']';
-  assert.deepEqual(parseRequest(mispaired), { ok: false, reason: 'not-json' });
+  assert.deepEqual(parseRequest(mispaired), { parsed: false, reason: 'not-json' });
   // Removing the second request would still leave a broken first one.
   const broken = example.replace('"chainId":1', '"chainId":tru');
-  assert.deepEqual(parseRequest(broken + example), { ok: false, reason: 'not-json' });
+  assert.deepEqual(parseRequest(broken + example), { parsed: false, reason: 'not-json' });
 });
 
 test('reads a request pasted with a non-breaking space or a byte order mark', () => {
-  assert.equal(parseRequest(' ' + example).ok, true);
-  assert.equal(parseRequest('﻿' + example).ok, true);
+  assert.equal(parseRequest(' ' + example).parsed, true);
+  assert.equal(parseRequest('﻿' + example).parsed, true);
+});
+
+test('refuses a domain nested too deep to read', () => {
+  const levels = 5000;
+  const text = damaged((data) => {
+    data.types.EIP712Domain = [{ name: 'inner', type: 'EIP712Domain[]' }];
+    data.domain = 'DOMAIN';
+  }).replace('"DOMAIN"', '{"inner":['.repeat(levels) + ']}'.repeat(levels));
+  assert.deepEqual(parseRequest(text), { parsed: false, reason: 'too-deep' });
 });
 
 test('refuses a message nested too deep to read', () => {
@@ -147,22 +165,22 @@ test('refuses a message nested too deep to read', () => {
     data.types.Mail = [{ name: 'to', type: 'Mail[]' }];
     data.message = 'MESSAGE';
   }).replace('"MESSAGE"', '{"to":['.repeat(levels) + ']}'.repeat(levels));
-  assert.deepEqual(parseRequest(text), { ok: false, reason: 'too-deep' });
+  assert.deepEqual(parseRequest(text), { parsed: false, reason: 'too-deep' });
 });
 
 test('refuses JSON that is not a signing request', () => {
-  assert.deepEqual(parseRequest('[1, 2]'), { ok: false, reason: 'not-typed-data' });
+  assert.deepEqual(parseRequest('[1, 2]'), { parsed: false, reason: 'unexpected-shape' });
   for (const key of ['types', 'primaryType', 'domain', 'message']) {
     const text = damaged((data) => delete data[key]);
-    assert.deepEqual(parseRequest(text), { ok: false, reason: 'not-typed-data', detail: key });
+    assert.deepEqual(parseRequest(text), { parsed: false, reason: 'unexpected-shape', detail: key });
   }
   const text = damaged((data) => (data.types.Person = 'Person'));
-  assert.deepEqual(parseRequest(text), { ok: false, reason: 'not-typed-data', detail: 'types' });
+  assert.deepEqual(parseRequest(text), { parsed: false, reason: 'unexpected-shape', detail: 'types' });
 });
 
 test('refuses a request whose main type is not declared', () => {
   const text = damaged((data) => (data.primaryType = 'Permit'));
-  assert.deepEqual(parseRequest(text), { ok: false, reason: 'type-not-declared', detail: 'Permit' });
+  assert.deepEqual(parseRequest(text), { parsed: false, reason: 'main-type-not-found', detail: 'Permit' });
 });
 
 test('flags a value that does not fit its type and keeps the rest', () => {
@@ -170,9 +188,9 @@ test('flags a value that does not fit its type and keeps the rest', () => {
     data.message.from = 'Cow';
     delete data.message.contents;
   });
-  const { ok, message } = parseRequest(text);
-  assert.equal(ok, true);
-  assert.deepEqual(message[0], { name: 'from', type: 'Person', value: 'Cow', mismatch: true });
+  const { parsed, message } = parseRequest(text);
+  assert.equal(parsed, true);
+  assert.deepEqual(message[0], { name: 'from', type: 'Person', value: 'Cow', unread: true });
   assert.equal(message[1].fields.length, 2);
-  assert.deepEqual(message[2], { name: 'contents', type: 'string', value: undefined, mismatch: true });
+  assert.deepEqual(message[2], { name: 'contents', type: 'string', value: undefined, unread: true });
 });

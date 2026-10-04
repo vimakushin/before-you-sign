@@ -17,14 +17,13 @@
 // Domains of the contracts these protocols are deployed as: the declaration
 // of EIP712Domain each contract hashes, and the values it hashes with it.
 // The chain id is part of every declaration but is not listed among the
-// values: it differs from network to network and there is nothing to compare
-// it with. DAI is the exception, because the address below is its address on
-// one particular network.
+// values: it differs from network to network and there is nothing verified
+// to compare it with.
 //
-// A domain here means only that the protocol's authors publish it. The lists
-// are not claimed to be complete (Seaport had versions before 1.5), and apart
-// from DAI they are not tied to a network: an address published for one
-// network is accepted on any.
+// A domain here means only that the protocol's authors publish it. It says
+// nothing about whether signing is safe. The lists are not claimed to be
+// complete (Seaport had versions before 1.5), and they are not tied to a
+// network: an address published for one network is accepted on any.
 
 // Permit2. Declaration and name: EIP712.sol hashes
 // "EIP712Domain(string name,uint256 chainId,address verifyingContract)" and
@@ -62,29 +61,36 @@ const SEAPORT = [
 // DAI. Declaration, name and version: dai.sol, the same file the permit type
 // comes from, which says of itself that it was altered compared to the
 // production version. Address: MCD_DAI in Maker's record of its mainnet
-// release 1.0.0. The chain id is passed to the contract when it is deployed
-// (`constructor(uint256 chainId_)`), so the 1 below is what a mainnet
-// deployment is expected to hold, EIP-155 numbering mainnet as 1
-// ("1 | Ethereum mainnet"); it was not read from the deployed contract. That
-// the code at this address is this file is likewise taken from Maker naming
-// both DAI, not checked.
+// release 1.0.0. That the code at this address is this file is taken from
+// Maker naming both DAI, not checked.
+//
+// The chain id is not compared. An earlier version required it to be 1, on
+// the reasoning that the address is a mainnet one. But the contract receives
+// its chain id when it is deployed (`constructor(uint256 chainId_)`), and
+// the value the deployed contract holds was never read. Comparing against a
+// number we have not verified is worse than not comparing: it would answer
+// "could not be verified" for a request addressed to that very contract.
 // https://github.com/makerdao/dss/blob/fa4f6630afb0624d04a003e920b0d71a00331d98/src/dai.sol
 // https://github.com/makerdao/mcd-changelog/blob/d73dfd17d54ad1bb00d8087bce25dd2866e3f397/releases/mainnet/1.0.0/contracts.json
-// https://github.com/ethereum/EIPs/blob/3b3c832577ec4205d463d990d52006e299962449/EIPS/eip-155.md
 const DAI = [
   {
     declaration: NAME_VERSION_CHAIN_CONTRACT,
     values: {
       name: 'Dai Stablecoin',
       version: '1',
-      chainId: '1',
       verifyingContract: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
     },
   },
 ];
 
+// ERC-2612. The standard gives the domain its tokens use; the values are the
+// token's own, so none are listed.
+// https://github.com/ethereum/ERCs/blob/365b4c02879f3e882b91281d42b4f57b406205e9/ERCS/erc-2612.md
+const ERC2612 = [{ declaration: NAME_VERSION_CHAIN_CONTRACT, values: {} }];
+
 const KNOWN = [
   {
+    domains: ERC2612,
     // Two separate quotes from "Specification": "a call to permit(owner,
     // spender, value, deadline, v, r, s) will set allowance[owner][spender] to
     // value", and among the conditions for that, "The current blocktime is
@@ -239,7 +245,7 @@ const KNOWN = [
   },
 ];
 
-// Takes a successful result of parseRequest (ok: true) and returns null for a
+// Takes a successful result of parseRequest (parsed: true) and returns null for a
 // type that is not in the table, and otherwise one of:
 //
 //   { kind, roles, ... }  the roles can be read as the table describes them;
@@ -271,17 +277,32 @@ const KNOWN = [
 //       whether the address in the request would be part of it. The first
 //       version took the address as written in this case, and so named a
 //       protocol on the strength of a field that may not be signed at all.
-//   'domain-not-listed'    the domain is declared and is not one of those
-//       published for this protocol.
+//   'domain-not-listed'    the domain is declared and is not, in every
+//       part, one of those published for this type.
+//
+// Every part means: the declaration; each published value; no key in the
+// domain that its type leaves out; no declared member without a readable
+// value; no number written without quotes in a member declared as anything
+// but an integer, since such a number is not that string; and an address
+// that is written as one: "0x" and 40 hexadecimal digits, the 160 bits
+// EIP-712 encodes an address as ("Addresses are encoded as uint160"). Any difference gives the
+// same answer, and the answer is "could not be verified", not "forged": why
+// a domain differs is not something we know.
 //
 // The rule is one-sided. A listed domain lets us name the protocol; a domain
-// that is not listed is not a finding about that contract.
+// that is not listed is not a finding about that contract. And a listed
+// domain is not a finding either: it means the authors of the protocol
+// publish this domain, not that signing is safe.
 //
-// An ERC-2612 permit has no list: the contract is the token itself, and it
-// can be any token. Its roles are always returned, and they describe what the
-// standard says such a message means; whether that token follows the standard
-// is not something this code can check. DAI's permit is listed, because DAI
-// is one contract; the same shape sent to any other token is 'domain-not-listed'.
+// An ERC-2612 permit has no list of contracts: the contract is the token
+// itself, and it can be any token. What the standard does publish is the
+// domain's declaration, so that is compared, and for the same reason as
+// everywhere else: the token is read from the domain, and an address that is
+// not declared as part of the domain may not be signed. Its roles describe
+// what the standard says such a message means; whether that token follows the
+// standard is not something this code can check. DAI's permit is listed,
+// because DAI is one contract; the same shape sent to any other token is
+// 'domain-not-listed'.
 export function recognise({ primaryType, types, domain }) {
   const declared = encodeType(primaryType, types);
   const known = KNOWN.find((entry) => entry.encodeType === declared);
@@ -292,26 +313,34 @@ export function recognise({ primaryType, types, domain }) {
   const facts = structuredClone(known);
   delete facts.encodeType;
   delete facts.domains;
-  if (!domains) return facts;
   if (!Object.hasOwn(types, 'EIP712Domain')) return { kind, unverified: 'domain-not-declared' };
 
   const declaration = encodeType('EIP712Domain', types);
-  const valueOf = (name) => domain.find((field) => field.name === name && !field.undeclared)?.value;
-  const listed = domains.some(
-    (published) =>
-      published.declaration === declaration &&
-      Object.entries(published.values).every(([name, value]) => same(name, valueOf(name), value)),
-  );
+  const member = (name) => domain.find((field) => field.name === name);
+  const listed =
+    domain.every(asDeclared) &&
+    domains.some(
+      (published) =>
+        published.declaration === declaration &&
+        Object.entries(published.values).every(([name, value]) => same(name, member(name), value)),
+    );
   return listed ? facts : { kind, unverified: 'domain-not-listed' };
+}
+
+// Whether a domain member holds the kind of value its type declares.
+function asDeclared({ type, value, undeclared, unread, bare }) {
+  if (undeclared || unread) return false;
+  if (type === 'address') return typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value);
+  return !bare || /^u?int\d*$/.test(type);
 }
 
 // An address is a number written in hexadecimal: the case of its letters does
 // not change which address it is. Every other value is compared as written.
-function same(name, actual, published) {
-  if (typeof actual !== 'string') return false;
+function same(name, field, published) {
+  if (typeof field.value !== 'string') return false;
   return name === 'verifyingContract'
-    ? actual.toLowerCase() === published.toLowerCase()
-    : actual === published;
+    ? field.value.toLowerCase() === published.toLowerCase()
+    : field.value === published;
 }
 
 // EIP-712, "Definition of encodeType": the type is written as its name and
