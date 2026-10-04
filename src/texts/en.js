@@ -20,6 +20,15 @@ export default {
     wallet:
       'This page is an explanation, not a copy of what you sign. Compare it with what your wallet shows before you sign.',
     notCheckedTitle: 'What we have not checked',
+    title: 'Before you sign',
+    lead: 'Paste the signing request your wallet is showing you. This page describes what the request says, as far as we can read it. It does not tell you whether to sign it.',
+    inputLabel: 'Signing request (the JSON your wallet shows)',
+    decimalsLabel: 'Token decimals, if you know them (optional)',
+    answerTitle: 'What this request says',
+    contentsTitle: 'What the request contains, as written',
+    flagUndeclared: "not declared in the request's types",
+    flagUnread: 'we could not read this',
+    flagBare: 'number written without quotes',
   },
 
   refusal: {
@@ -64,8 +73,7 @@ export default {
       'Whether this token does what the ERC-2612 standard describes. A request of this form can be addressed to any contract, whether or not it is a token.',
     'token-decimals':
       'How many decimal places the token uses (its decimals). That is a property of the token and is not in the request, so we cannot turn the amount into a number of whole tokens without guessing.',
-    'device-clock':
-      'The current time. "From now" and "ago" are counted from your device\'s clock; the contract compares with the network\'s time.',
+    'device-clock': "The current time. \"In …\", \"… ago\" and \"This moment has passed\" are counted from your device's clock; the contract compares with the network's time.",
     'undeclared-keys':
       "The request has fields that its own type description does not mention: {names}. EIP-712's encoding covers only the described fields. We do not know what your wallet does with the others.",
     'unread-values': 'We could not read some values: {names}. They are shown as written.',
@@ -111,18 +119,20 @@ export default {
   },
 
   dai: {
-    what: 'This request has no amount. Instead it contains a yes-or-no answer.',
-    yes: 'Here it is a yes: the address {spender} can spend the DAI held by the address {holder}, with no limit on the amount.',
-    no: "Here it is a no: the signature takes away the permission of the address {spender} to spend the DAI held by the address {holder}.",
+    what: 'This request has no amount. It has a yes-or-no field instead.',
+    yes: 'The answer is yes: once submitted, the signature lets the address {spender} spend the DAI held by the address {holder}, with no limit on the amount.',
+    no: 'The answer is no: once submitted, the signature removes the permission of the address {spender} to spend the DAI held by the address {holder}.',
     expiry: 'Signature deadline, the last moment the signature can be submitted: {time}',
+    unread:
+      'We could not read the yes-or-no answer in this request, so we do not say which it is. It is shown as written: {value}',
     expiryZero:
       'The expiry is zero. This contract does not check the time when the expiry is zero, so the signature has no deadline.',
   },
 
   permit2: {
-    single: 'Signing this lets the address {spender} spend the token at {token} through Permit2, up to the amount below.',
-    batch:
-      'Signing this lets the address {spender} spend each of the tokens listed below through Permit2, each up to its own amount and with its own expiration.',
+    single: 'A valid signature, once submitted to Permit2, lets the address {spender} spend the token at {token}, up to the amount below.',
+    batch: 'A valid signature, once submitted to Permit2, lets the address {spender} spend each of the tokens listed below, each up to its own amount and with its own expiration.',
+    batchToken: 'The token at {token}:',
     owner: 'The request does not name whose tokens these are. They are the tokens of whoever signs.',
     twoTimes:
       'This request has two separate times, and they mean different things: until when the signature can be submitted, and until when the allowance it creates can be spent.',
@@ -130,17 +140,16 @@ export default {
     expirationZero:
       'The expiration of the allowance is zero. In Permit2 that does not mean "no expiration": the allowance lasts until the end of the block in which the signature is submitted, and within that block it can be spent up to the full amount.',
     sigDeadline: 'Signature deadline, the last moment the signature can be submitted: {time}',
-    unlimited:
-      "The amount is the largest number this field can hold. Permit2's source calls that an unlimited approval: there is no limit on the amount.",
-    transfer:
-      'Signing this lets the address {spender} transfer the token at {token} from whoever signs, one time, up to the amount below. "One time" means the signature works for one transfer. It says nothing about the size of the transfer; the amount below is its limit.',
-    transferRecipient:
-      "The request does not say who receives the tokens. The recipient is named by whoever submits the signature, and Permit2's source says that has to be {spender}.",
+    unlimited: "The amount below is the largest number this field can hold. Permit2's source calls that an unlimited approval.",
+    unlimitedInBatch: "At least one of the amounts below is the largest number its field can hold; it is marked where it appears. Permit2's source calls that an unlimited approval.",
+    transfer: 'A valid signature, once submitted to Permit2, lets the address {spender} transfer the token at {token} from whoever signs, one time, up to the amount below. "One time" means the signature works for one transfer. It says nothing about the size of the transfer; the amount below is its limit.',
+    transferRecipient: "The request does not say who receives the tokens. The recipient is named by whoever submits the signature. Permit2's source says the submitter has to be {spender}.",
     transferDeadline: 'Signature deadline, the last moment the signature can be submitted: {time}',
   },
 
   seaport: {
-    what: 'This request has the form of a Seaport order. It is made of two lists.',
+    what: 'This request has the form of a Seaport order. An order is two lists: what may leave the account of whoever placed it, and what must be received in return.',
+    recipient: 'Received by the address {address}.',
     offer: 'Items that may be transferred from the account of whoever placed the order:',
     offerRecipient: 'The order does not say who receives these items.',
     consideration: 'Items that must be received for the order to be carried out, each listed with the address that receives it:',
@@ -169,9 +178,8 @@ export default {
   },
 
   time: {
-    date: '{date}, {zone}',
-    fromNow: '{distance} from now',
-    passed: 'This moment has passed, {distance} ago.',
+    date: '{date} {zone}',
+    passed: 'This moment has passed.',
     largest: 'This is the largest number this field can hold. Nothing later fits in it.',
     beyondDates: 'This moment is too far ahead for us to show as a date.',
     zero: 'The value is zero. As a date, zero is 1 January 1970.',

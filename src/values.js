@@ -110,8 +110,8 @@ export function withDecimals(integer, decimals) {
 // is always returned, and a converted amount comes in one of two forms:
 // `amount`, when the person has said how many decimals the token has, or
 // `assumed`, a conversion for each of two cases, each of which is a guess and
-// has to be shown as one. The two cases are the project's choice of examples
-// (TZ, section 4), not a statement that tokens come only in these two kinds.
+// has to be shown as one. The two cases are the project's choice of examples,
+// not a statement that tokens come only in these two kinds.
 const ASSUMED_DECIMALS = [18, 6];
 
 // ERC-20 declares `function decimals() public view returns (uint8)`, so a

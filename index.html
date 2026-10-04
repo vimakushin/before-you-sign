@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      The page promises to send the pasted text nowhere. This line makes the
+      browser hold it to that: scripts and styles come only from this site,
+      and connections of any other kind (fetch, images, fonts, frames, form
+      posts) are refused outright.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Before you sign</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="src/page.js"></script>
+  </head>
+  <body>
+    <header>
+      <nav aria-label="Language">
+        <a href="#en" lang="en">English</a>
+        <a href="#ru" lang="ru">Русский</a>
+      </nav>
+      <h1 id="title"></h1>
+      <p id="lead"></p>
+    </header>
+
+    <main>
+      <label for="request" id="request-label"></label>
+      <textarea id="request" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+
+      <!-- The answer comes straight after the box, so that it is on screen
+           without scrolling even on a small phone. The decimals field is
+           below it: it only matters once there is an amount to convert. -->
+      <section id="answer" aria-live="polite"></section>
+
+      <label for="decimals" id="decimals-label"></label>
+      <input id="decimals" type="number" min="0" max="255" step="1" inputmode="numeric" autocomplete="off" />
+    </main>
+
+    <footer>
+      <p id="keys"></p>
+      <p id="not-sent"></p>
+    </footer>
+  </body>
+</html>

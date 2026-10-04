@@ -1,0 +1,133 @@
+/*
+  One column, system fonts, nothing loaded from anywhere.
+
+  No colour carries meaning here. A green or a red mark next to a request
+  would be a verdict, and this page does not give one: the line that matters
+  most is set apart by size and a plain rule, not by a warning colour.
+*/
+
+:root {
+  color-scheme: light dark;
+  --ink: #1a1a1a;
+  --paper: #fdfdfb;
+  --rule: #8a8a8a;
+  --quiet: #555;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #ececec;
+    --paper: #161616;
+    --rule: #8a8a8a;
+    --quiet: #b0b0b0;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0 auto;
+  padding: 1rem;
+  max-width: 44rem;
+  font: 1rem/1.5 system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  /* Addresses and 78-digit numbers have no spaces to break at. Without this
+     they push the page wider than a phone. */
+  overflow-wrap: anywhere;
+}
+
+nav {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+nav a {
+  color: inherit;
+}
+
+nav a[aria-current='true'] {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+h1 {
+  margin: 0.5rem 0 0;
+  font-size: 1.5rem;
+}
+
+h2 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+p {
+  margin: 0.5rem 0;
+}
+
+label {
+  display: block;
+  margin-top: 1rem;
+  font-weight: 600;
+}
+
+textarea,
+input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  /* Not smaller than 1rem: a phone zooms the whole page in when a field with
+     smaller type is tapped. */
+  font: 1rem/1.4 ui-monospace, monospace;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+
+input {
+  max-width: 8rem;
+}
+
+/* The answer to "what am I being asked to sign", first and largest. */
+.main {
+  margin: 0.75rem 0;
+  padding-left: 0.75rem;
+  border-left: 4px solid var(--ink);
+  font-size: 1.1rem;
+}
+
+.group-title {
+  margin-bottom: 0;
+  font-weight: 600;
+}
+
+ul {
+  margin: 0.25rem 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+li {
+  margin: 0.25rem 0;
+}
+
+.written {
+  font: 0.85rem/1.4 ui-monospace, monospace;
+}
+
+.flag {
+  font: 0.85rem/1.4 system-ui, sans-serif;
+  color: var(--quiet);
+}
+
+footer {
+  margin-top: 2rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+  color: var(--quiet);
+  font-size: 0.9rem;
+}
