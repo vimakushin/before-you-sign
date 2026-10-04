@@ -59,9 +59,15 @@ const SEAPORT = [
   values: { name: 'Seaport', version, verifyingContract },
 }));
 
-// DAI. Declaration, name and version: dai.sol. Address: MCD_DAI in Maker's
-// own record of its first mainnet release. That makes it an address on
-// Ethereum mainnet, which EIP-155 numbers 1 ("1 | Ethereum mainnet").
+// DAI. Declaration, name and version: dai.sol, the same file the permit type
+// comes from, which says of itself that it was altered compared to the
+// production version. Address: MCD_DAI in Maker's record of its mainnet
+// release 1.0.0. The chain id is passed to the contract when it is deployed
+// (`constructor(uint256 chainId_)`), so the 1 below is what a mainnet
+// deployment is expected to hold, EIP-155 numbering mainnet as 1
+// ("1 | Ethereum mainnet"); it was not read from the deployed contract. That
+// the code at this address is this file is likewise taken from Maker naming
+// both DAI, not checked.
 // https://github.com/makerdao/dss/blob/fa4f6630afb0624d04a003e920b0d71a00331d98/src/dai.sol
 // https://github.com/makerdao/mcd-changelog/blob/d73dfd17d54ad1bb00d8087bce25dd2866e3f397/releases/mainnet/1.0.0/contracts.json
 // https://github.com/ethereum/EIPs/blob/3b3c832577ec4205d463d990d52006e299962449/EIPS/eip-155.md
@@ -117,6 +123,7 @@ const KNOWN = [
       allowed: 'message.allowed',
       signatureDeadline: 'message.expiry',
     },
+    zeroMeans: { signatureDeadline: 'not-checked' },
   },
   {
     // Two different times. `sigDeadline` is how long the signature can be
@@ -130,6 +137,16 @@ const KNOWN = [
     // IAllowanceTransfer.sol: "Setting amount to type(uint160).max sets an
     // unlimited approval"; AllowanceTransfer.sol reduces the allowance on a
     // transfer only `if (maxAmount != type(uint160).max)`.
+    //
+    // A zero expiration is not "no expiry". Allowance.sol: "If the inputted
+    // expiration is 0, the stored expiration is set to block.timestamp", and
+    // "the allowance only lasts the duration of the block". The signed value
+    // reaches that code unchanged: AllowanceTransfer.sol takes
+    // `uint48 expiration = details.expiration` and calls
+    // `allowed.updateAll(amount, expiration, nonce)`. DAI's permit above has
+    // a zero of its own, in a different field, and there it switches the
+    // check off instead.
+    // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/libraries/Allowance.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/libraries/PermitHash.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/interfaces/IAllowanceTransfer.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/AllowanceTransfer.sol
@@ -144,6 +161,8 @@ const KNOWN = [
       allowanceExpiration: 'message.details.expiration',
       signatureDeadline: 'message.sigDeadline',
     },
+    largestAmountMeans: 'unlimited',
+    zeroMeans: { allowanceExpiration: 'current-block-only' },
   },
   {
     // The same as PermitSingle with a list of tokens and one spender for all.
@@ -159,6 +178,8 @@ const KNOWN = [
       allowanceExpiration: 'message.details[].expiration',
       signatureDeadline: 'message.sigDeadline',
     },
+    largestAmountMeans: 'unlimited',
+    zeroMeans: { allowanceExpiration: 'current-block-only' },
   },
   {
     // ISignatureTransfer.sol: `amount` is "the maximum amount that can be
@@ -221,8 +242,16 @@ const KNOWN = [
 // Takes a successful result of parseRequest (ok: true) and returns null for a
 // type that is not in the table, and otherwise one of:
 //
-//   { kind, roles }       the roles can be read as the table describes them;
+//   { kind, roles, ... }  the roles can be read as the table describes them;
 //   { kind, unverified }  the message has this shape, and that is all we know.
+//
+// With the roles come the two things a contract may do with a particular
+// number, where its source says so: `largestAmountMeans: 'unlimited'` when
+// the largest amount the type can hold is treated as no limit at all, and
+// `zeroMeans`, which says for a time role what a zero in it does. Where
+// these are absent, nothing of the kind was found in the sources read. That
+// is not a statement that the contract treats the number as an ordinary one:
+// ERC-2612, for one, leaves it to each token what the largest allowance does.
 //
 // A role is a path into the parse result: `domain` or `message`, then
 // member names; `[]` means every item of a list.
@@ -240,8 +269,8 @@ const KNOWN = [
 //   'domain-not-declared'  the request has no EIP712Domain among its types.
 //       What a wallet would sign as the domain is then unknown, and so is
 //       whether the address in the request would be part of it. The first
-//       version took the address as written in this case; that let a request
-//       be named after a protocol on the strength of a field nothing binds.
+//       version took the address as written in this case, and so named a
+//       protocol on the strength of a field that may not be signed at all.
 //   'domain-not-listed'    the domain is declared and is not one of those
 //       published for this protocol.
 //
@@ -258,8 +287,12 @@ export function recognise({ primaryType, types, domain }) {
   const known = KNOWN.find((entry) => entry.encodeType === declared);
   if (!known) return null;
 
-  const { kind, roles, domains } = known;
-  if (!domains) return { kind, roles };
+  // A copy, so that nothing a caller does to the answer reaches the table.
+  const { kind, domains } = known;
+  const facts = structuredClone(known);
+  delete facts.encodeType;
+  delete facts.domains;
+  if (!domains) return facts;
   if (!Object.hasOwn(types, 'EIP712Domain')) return { kind, unverified: 'domain-not-declared' };
 
   const declaration = encodeType('EIP712Domain', types);
@@ -269,7 +302,7 @@ export function recognise({ primaryType, types, domain }) {
       published.declaration === declaration &&
       Object.entries(published.values).every(([name, value]) => same(name, valueOf(name), value)),
   );
-  return listed ? { kind, roles } : { kind, unverified: 'domain-not-listed' };
+  return listed ? facts : { kind, unverified: 'domain-not-listed' };
 }
 
 // An address is a number written in hexadecimal: the case of its letters does

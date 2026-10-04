@@ -33,6 +33,8 @@ const SEAPORT_1_6 = '0x0000000000000068F116a894984e2DB1123eB395';
 const SEAPORT_1_5 = '0x00000000000000ADc04C56Bf30aC9d3c0aAF14dC';
 const UNPUBLISHED = '0x1111111111111111111111111111111111111111';
 
+// Domain values, composed here from the same published names, versions and
+// addresses the code holds; they are not taken from a request a wallet showed.
 const permit2 = (verifyingContract) => ({ name: 'Permit2', chainId: 1, verifyingContract });
 const seaport = (version, verifyingContract) => ({ name: 'Seaport', version, chainId: 1, verifyingContract });
 const dai = {
