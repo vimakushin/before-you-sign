@@ -2,7 +2,7 @@
 // eth_signTypedData_v4). Text in, fields out. Nothing here explains what a
 // field means or words anything for a person: this module only reads.
 //
-// The result is either { ok: true, primaryType, domain, message } or
+// The result is either { ok: true, primaryType, types, domain, message } or
 // { ok: false, reason, detail? }. A refusal is a normal result, not an
 // exception: people paste half a request, two requests, or something that is
 // not a request at all, and each of those deserves its own answer.
@@ -52,6 +52,7 @@ export function parseRequest(pasted) {
     return {
       ok: true,
       primaryType,
+      types,
       domain: domainFields,
       message: readStruct(primaryType, message, types),
     };
@@ -81,8 +82,9 @@ function isTypeDefinition(members) {
 
 // Why every number is turned into a string before the real parse.
 //
-// Amounts in these requests are 256-bit integers. Most dapps send them as
-// strings, but nothing stops one from sending a bare JSON number, and
+// Amounts in these requests are integers of up to 256 bits. A request may
+// carry them as strings or as bare JSON numbers (the example in EIP-712
+// itself writes its chain id as a bare number), and
 // JSON.parse reads bare numbers as 64-bit floats: anything above 2^53 comes
 // back silently rounded. A rounded amount is exactly the mistake this project
 // exists to prevent, so we never let JSON.parse see a number. Every numeric

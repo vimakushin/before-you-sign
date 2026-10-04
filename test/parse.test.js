@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs';
 import { parseRequest } from '../src/parse.js';
 
 // The request below is the example from the text of EIP-712 itself, section
-// "Specification of the eth_signTypedData JSON RPC", copied byte for byte:
-// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-712.md
+// "Specification of the eth_signTypedData JSON RPC", copied byte for byte
+// (retrieved 2026-10-04):
+// https://github.com/ethereum/EIPs/blob/3b3c832577ec4205d463d990d52006e299962449/EIPS/eip-712.md
 // Every other input in this file is that same request, damaged in one way.
 const example = readFileSync(new URL('./fixtures/eip712-example.json', import.meta.url), 'utf8');
 
@@ -19,6 +20,7 @@ test('reads the example from the standard', () => {
   assert.deepEqual(parseRequest(example), {
     ok: true,
     primaryType: 'Mail',
+    types: JSON.parse(example).types,
     domain: [
       { name: 'name', type: 'string', value: 'Ether Mail' },
       { name: 'version', type: 'string', value: '1' },
