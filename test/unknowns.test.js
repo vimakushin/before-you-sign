@@ -42,8 +42,10 @@ test('a type that is not explained adds that the meaning of its fields is not st
   assert.deepEqual(listFor(mail), [...ALWAYS, 'meaning-of-fields']);
 });
 
-test('a verified Permit2 request adds only the decimals of the token', () => {
-  assert.deepEqual(listFor(permitSingle), [...ALWAYS, 'token-decimals']);
+const PERMIT2 = ['network-not-compared', 'prior-approval-of-permit2', 'token-decimals', 'device-clock'];
+
+test('a Permit2 request with the published domain still has its own list', () => {
+  assert.deepEqual(listFor(permitSingle), [...ALWAYS, ...PERMIT2]);
 });
 
 test('an ERC-2612 permit adds that the token may not do what the standard says', () => {
@@ -67,7 +69,17 @@ test('an ERC-2612 permit adds that the token may not do what the standard says',
     domain: { name: 'Any Token', version: '1', chainId: '1', verifyingContract: '0x1111111111111111111111111111111111111111' },
     message: { owner: '0x1111111111111111111111111111111111111111', spender: '0x1111111111111111111111111111111111111111', value: '1', nonce: '0', deadline: '1' },
   });
-  assert.deepEqual(listFor(erc2612), [...ALWAYS, 'token-follows-standard', 'token-decimals']);
+  assert.deepEqual(listFor(erc2612), [...ALWAYS, 'token-follows-standard', 'token-decimals', 'device-clock']);
+});
+
+test('a number or an address that could not be read is listed, whatever the reason', () => {
+  const amount = (value) => changed(permitSingle, (data) => (data.message.details.amount = value));
+  for (const value of ['abc', '1e30', 1e30, '-5', '']) {
+    assert.ok(listFor(amount(value)).includes('unread-values'), JSON.stringify(value));
+  }
+  const token = changed(permitSingle, (data) => (data.message.details.token = 'hello'));
+  assert.ok(listFor(token).includes('unread-values'));
+  assert.ok(!listFor(permitSingle).includes('unread-values'));
 });
 
 test('answers for a request nested as deep as the parser accepts', () => {
@@ -78,9 +90,33 @@ test('answers for a request nested as deep as the parser accepts', () => {
   assert.deepEqual(listFor(nested), [...ALWAYS, 'meaning-of-fields']);
 });
 
+test('an ERC-2612 permit with a domain EIP-712 does not allow is not said to be off a list: there is no list', () => {
+  const text = changed(permitSingle, (data) => {
+    data.primaryType = 'Permit';
+    data.types = {
+      EIP712Domain: [{ name: 'owner', type: 'address' }],
+      Permit: [
+        { name: 'owner', type: 'address' },
+        { name: 'spender', type: 'address' },
+        { name: 'value', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+      ],
+    };
+    data.domain = { owner: '0x1111111111111111111111111111111111111111' };
+    data.message = { owner: data.domain.owner, spender: data.domain.owner, value: '1', nonce: '0', deadline: '1' };
+  });
+  assert.deepEqual(listFor(text), [...ALWAYS, 'meaning-of-fields', 'contract-not-verified']);
+});
+
 test('a contract that could not be verified is said so, and its fields are not explained', () => {
   const expected = [...ALWAYS, 'meaning-of-fields', 'contract-not-verified'];
-  assert.deepEqual(listFor(changed(permitSingle, (data) => (data.domain.name = 'Other'))), expected);
+  // Compared with a list and not found on it: the list is not complete.
+  assert.deepEqual(listFor(changed(permitSingle, (data) => (data.domain.name = 'Other'))), [
+    ...expected,
+    'published-lists-incomplete',
+  ]);
+  // Nothing to compare: the request declares no domain type.
   assert.deepEqual(listFor(changed(permitSingle, (data) => delete data.types.EIP712Domain)), expected);
 });
 
@@ -94,7 +130,7 @@ test('keys outside the type, values that could not be read, and large bare numbe
   // A deadline written as a bare number too large for JavaScript to hold exactly.
   const bare = permitSingle.replace('"sigDeadline": "1790072010"', '"sigDeadline": 9007199254740993');
   assert.notEqual(bare, permitSingle);
-  assert.deepEqual(listFor(bare), [...ALWAYS, 'token-decimals', 'bare-large-numbers']);
+  assert.deepEqual(listFor(bare), [...ALWAYS, ...PERMIT2, 'bare-large-numbers']);
   // The bare chain id in the EIP-712 example is small enough to be exact.
   assert.ok(!listFor(mail).includes('bare-large-numbers'));
 });

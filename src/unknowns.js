@@ -6,7 +6,7 @@
 // thing to compare before signing is the wallet's own screen and not this
 // page, belong to the page.
 
-import { losesDigits } from './values.js';
+import { losesDigits, notRead } from './values.js';
 
 // True of every request, whatever is in it: this project never asks the
 // network anything.
@@ -15,6 +15,8 @@ const ALWAYS = [
   'token-genuine', // whether the token is the one its name suggests
   'after-signing', // what the contract will do once it has the signature
 ];
+
+const TIME_ROLES = ['signatureDeadline', 'allowanceExpiration', 'startTime', 'endTime'];
 
 // Takes the result of parseRequest (parsed: true) and of recognise.
 export function notChecked(parsed, known) {
@@ -25,17 +27,20 @@ export function notChecked(parsed, known) {
   // not be verified: either way the meaning of the members is not stated.
   if (known === null || known.unverified) list.push('meaning-of-fields');
   if (known?.unverified) list.push('contract-not-verified');
-  // An ERC-2612 permit is explained by what the standard says. Any token can
-  // ask for this shape; whether this one does what the standard says is not
-  // something the request shows.
-  if (known?.kind === 'erc2612-permit' && known.roles) list.push('token-follows-standard');
+  // The domain was compared with a list, and no list here is complete.
+  if (known?.unverified === 'domain-not-listed') list.push('published-lists-incomplete');
+  // What the table in known-types.js records for this type in particular.
+  list.push(...(known?.unchecked ?? []));
   // Decimals are a property of the token and are not in the request. A
   // Seaport order has no single amount: its amounts are in the items of its
   // two lists.
   if (known?.roles?.amount || known?.roles?.offer) list.push('token-decimals');
+  // "How long from now" is counted from the clock of the person's device,
+  // not from the network's. If that clock is wrong, so is the distance.
+  if (TIME_ROLES.some((role) => known?.roles?.[role])) list.push('device-clock');
 
   if (fields.some((field) => field.undeclared)) list.push('undeclared-keys');
-  if (fields.some((field) => field.unread)) list.push('unread-values');
+  if (fields.some(notRead)) list.push('unread-values');
   if (fields.some(losesDigits)) list.push('bare-large-numbers');
   return list;
 }

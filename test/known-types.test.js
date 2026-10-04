@@ -101,9 +101,31 @@ test('recognises an ERC-2612 permit whatever token it is addressed to', () => {
   assertRolesDeclared(known, published.erc2612, 'Permit');
 });
 
+test('accepts an ERC-2612 permit with any domain made of the fields EIP-712 has', () => {
+  const { Permit } = published.erc2612;
+  const SALT = { name: 'salt', type: 'bytes32' };
+  const values = { name: 'Any Token', version: '1', chainId: 1, verifyingContract: UNPUBLISHED, salt: '0x01' };
+  const only = (members) => Object.fromEntries(members.map(({ name }) => [name, values[name]]));
+  const permit = (EIP712Domain) => recogniseTypes('Permit', { Permit, EIP712Domain }, only(EIP712Domain));
+
+  // No version, a salt, another order: all are domains EIP-712 allows.
+  for (const domain of [[NAME, CHAIN, CONTRACT], [CONTRACT, CHAIN, NAME, VERSION], [NAME, VERSION, CHAIN, CONTRACT, SALT]]) {
+    assert.equal(permit(domain).roles.token, 'domain.verifyingContract');
+  }
+  // A domain that names no contract does not say which token this is.
+  assert.equal(permit([NAME, CHAIN]).roles.token, undefined);
+  assert.ok(permit([NAME, CHAIN]).roles.spender);
+
+  const notListed = { kind: 'erc2612-permit', unverified: 'domain-not-standard' };
+  assert.deepEqual(permit([NAME, CONTRACT, { name: 'owner', type: 'address' }]), notListed);
+  assert.deepEqual(permit([NAME, { ...CONTRACT, type: 'string' }]), notListed);
+  assert.deepEqual(permit([NAME, NAME, CONTRACT]), notListed);
+  assert.deepEqual(permit([]), notListed);
+});
+
 test('does not read the token of an ERC-2612 permit from a value that is not written as an address', () => {
   const token = { name: 'Any Token', version: '1', chainId: 1, verifyingContract: UNPUBLISHED };
-  const notListed = { kind: 'erc2612-permit', unverified: 'domain-not-listed' };
+  const notListed = { kind: 'erc2612-permit', unverified: 'domain-not-standard' };
   for (const change of [{ verifyingContract: 12345 }, { verifyingContract: 'hello' }, { name: 5 }, { version: 1 }]) {
     assert.deepEqual(recogniseTypes('Permit', published.erc2612, { ...token, ...change }), notListed);
   }
@@ -120,7 +142,7 @@ test('does not read the token of an ERC-2612 permit from a domain it cannot hold
   const withoutContract = EIP712Domain.filter((member) => member.name !== 'verifyingContract');
   assert.deepEqual(recogniseTypes('Permit', { Permit, EIP712Domain: withoutContract }, token), {
     kind: 'erc2612-permit',
-    unverified: 'domain-not-listed',
+    unverified: 'domain-not-standard',
   });
 });
 
@@ -129,6 +151,8 @@ for (const [kind, primaryType, types, EIP712Domain, domain] of LISTED) {
     const known = recogniseTypes(primaryType, { ...types, EIP712Domain }, domain);
     assert.equal(known.kind, kind);
     assertRolesDeclared(known, types, primaryType);
+    // Named by its contract's address, on whatever network the request says.
+    assert.ok(known.unchecked.includes('network-not-compared'));
   });
 
   test(`gives ${kind} at ${domain.verifyingContract} no roles once the domain differs`, () => {

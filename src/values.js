@@ -22,6 +22,12 @@ export function readInteger(value) {
   return /^\d+$/.test(value) || /^0x[0-9a-fA-F]+$/.test(value) ? BigInt(value) : null;
 }
 
+// An address as EIP-712 encodes it, 160 bits ("Addresses are encoded as
+// uint160"): "0x" and 40 hexadecimal digits.
+export function isAddress(value) {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value);
+}
+
 // The largest number an unsigned integer type can hold: 2^N - 1 for uintN.
 // Only the sizes EIP-712 has are answered ("The atomic types are bytes1 to
 // bytes32, uint8 to uint256, int8 to int256, bool and address. These
@@ -45,6 +51,19 @@ function readUnsigned(field) {
   if (unread || largest === null || integer === null || integer > largest) return null;
   const read = { integer, largest: integer === largest };
   return losesDigits(field) ? { ...read, rounding: true } : read;
+}
+
+// Whether a field holds something this project could not read. It covers the
+// parser's own mark and the two kinds of value read here, unsigned integers
+// and addresses: "abc" or "1e30" in a uint256 member, a word where an address
+// is declared. It is a minimum, not a validation of the request: strings,
+// booleans, byte strings and signed integers are not examined at all, and
+// "not read" says only that, never that the value is wrong.
+export function notRead(field) {
+  if (field.unread) return true;
+  if (field.undeclared || field.fields || field.items) return false;
+  if (field.type === 'address') return !isAddress(field.value);
+  return largestOf(field.type) !== null && readUnsigned(field) === null;
 }
 
 // Whether a field holds an integer that the request writes without quotes and

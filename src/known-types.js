@@ -13,6 +13,23 @@
 //
 // Every string and every role below was read from the source named next to
 // it, at the commit in the link, on 2026-10-04.
+//
+// Times. Every deadline in these types is a number its contract compares
+// with the timestamp of the current block, which Solidity defines as "current
+// block timestamp as seconds since unix epoch". So these numbers are seconds
+// since the start of 1970.
+//   Permit2 (compiled with Solidity 0.8.17) compares with `block.timestamp`.
+//   DAI (Solidity 0.6.12) compares with `now`, there an "alias for
+//   block.timestamp".
+//   Seaport's documentation calls startTime and endTime "the block timestamp
+//   at which the order becomes active" and "expires", and Verifiers.sol
+//   checks them against `timestamp()`.
+//   ERC-2612 says "the current blocktime".
+// https://github.com/ethereum/solidity/blob/8df45f5f8632da4817bc7ceb81497518f298d290/docs/units-and-global-variables.rst
+// https://github.com/ethereum/solidity/blob/27d51765c0623c9f6aef7c00214e9fe705c331b1/docs/units-and-global-variables.rst
+// https://github.com/ProjectOpenSea/seaport-core/blob/523097f9cee66c15d308c900c50f336b291cda08/src/lib/Verifiers.sol
+
+import { isAddress } from './values.js';
 
 // Domains of the contracts these protocols are deployed as: the declaration
 // of EIP712Domain each contract hashes, and the values it hashes with it.
@@ -83,14 +100,30 @@ const DAI = [
   },
 ];
 
-// ERC-2612. The standard gives the domain its tokens use; the values are the
-// token's own, so none are listed.
-// https://github.com/ethereum/ERCs/blob/365b4c02879f3e882b91281d42b4f57b406205e9/ERCS/erc-2612.md
-const ERC2612 = [{ declaration: NAME_VERSION_CHAIN_CONTRACT, values: {} }];
+// The fields EIP-712 allows a domain to have. A contract picks among them:
+// the type of the domain is "a struct named EIP712Domain with one or more of
+// the below fields. Protocol designers only need to include the fields that
+// make sense for their signing domain", and "User-agents should accept fields
+// in any order".
+// https://github.com/ethereum/EIPs/blob/3b3c832577ec4205d463d990d52006e299962449/EIPS/eip-712.md
+const DOMAIN_FIELDS = {
+  name: 'string',
+  version: 'string',
+  chainId: 'uint256',
+  verifyingContract: 'address',
+  salt: 'bytes32',
+};
 
 const KNOWN = [
   {
-    domains: ERC2612,
+    // The standard does not fix the domain: it "should be unique to the
+    // contract and chain" and "satisfy the requirements of EIP-712, but is
+    // otherwise unconstrained"; the four-field domain it shows is "a common
+    // choice". So any domain made of EIP-712's own fields is accepted. The
+    // first version demanded the four-field one and would have answered
+    // "could not be verified" to a token whose domain has no version.
+    anyDomain: true,
+    unchecked: ['token-follows-standard'],
     // Two separate quotes from "Specification": "a call to permit(owner,
     // spender, value, deadline, v, r, s) will set allowance[owner][spender] to
     // value", and among the conditions for that, "The current blocktime is
@@ -122,6 +155,7 @@ const KNOWN = [
     // https://github.com/makerdao/dss/blob/fa4f6630afb0624d04a003e920b0d71a00331d98/src/dai.sol
     domains: DAI,
     kind: 'dai-permit',
+    unchecked: ['network-not-compared', 'contract-code-not-compared'],
     encodeType: 'Permit(address holder,address spender,uint256 nonce,uint256 expiry,bool allowed)',
     roles: {
       spender: 'message.spender',
@@ -157,7 +191,11 @@ const KNOWN = [
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/interfaces/IAllowanceTransfer.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/AllowanceTransfer.sol
     domains: PERMIT2,
+    // IAllowanceTransfer.sol says of this whole interface: "Requires user's
+    // token approval on the Permit2 contract". Whether the person has given
+    // that approval is not in the request.
     kind: 'permit2-permit-single',
+    unchecked: ['network-not-compared', 'prior-approval-of-permit2'],
     encodeType:
       'PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)',
     roles: {
@@ -175,6 +213,7 @@ const KNOWN = [
     // Same sources.
     domains: PERMIT2,
     kind: 'permit2-permit-batch',
+    unchecked: ['network-not-compared', 'prior-approval-of-permit2'],
     encodeType:
       'PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)',
     roles: {
@@ -210,6 +249,7 @@ const KNOWN = [
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/README.md
     domains: PERMIT2,
     kind: 'permit2-permit-transfer-from',
+    unchecked: ['network-not-compared'],
     encodeType:
       'PermitTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline)TokenPermissions(address token,uint256 amount)',
     roles: {
@@ -232,7 +272,10 @@ const KNOWN = [
     // commit the repository's tag `1.5` points to, join into the string below.
     // https://github.com/ProjectOpenSea/seaport/blob/ab3b5cb6e10580ea979d63983e409e679935c702/contracts/lib/ConsiderationBase.sol
     domains: SEAPORT,
+    // Only five of the order's eleven members have a role here; zone,
+    // orderType, zoneHash, salt, conduitKey and counter are not explained.
     kind: 'seaport-order',
+    unchecked: ['network-not-compared', 'other-order-fields'],
     encodeType:
       'OrderComponents(address offerer,address zone,OfferItem[] offer,ConsiderationItem[] consideration,uint8 orderType,uint256 startTime,uint256 endTime,bytes32 zoneHash,uint256 salt,bytes32 conduitKey,uint256 counter)ConsiderationItem(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount,address recipient)OfferItem(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount)',
     roles: {
@@ -254,7 +297,12 @@ const KNOWN = [
 // With the roles come the two things a contract may do with a particular
 // number, where its source says so: `largestAmountMeans: 'unlimited'` when
 // the largest amount the type can hold is treated as no limit at all, and
-// `zeroMeans`, which says for a time role what a zero in it does. Where
+// `zeroMeans`, which says for a time role what a zero in it does. And
+// `unchecked`: what an answer about this type in particular has not looked
+// at, for the list in unknowns.js. 'network-not-compared' is on every type
+// named by its contract's address, because the chain id is never compared:
+// the protocol is named even if the request is for a network where that
+// address may hold something else. Where
 // these are absent, nothing of the kind was found in the sources read. That
 // is not a statement that the contract treats the number as an ordinary one:
 // ERC-2612, for one, leaves it to each token what the largest allowance does.
@@ -279,13 +327,15 @@ const KNOWN = [
 //       protocol on the strength of a field that may not be signed at all.
 //   'domain-not-listed'    the domain is declared and is not, in every
 //       part, one of those published for this type.
+//   'domain-not-standard'  for a type with no list to compare with (the
+//       ERC-2612 permit): the domain is declared and is not one EIP-712
+//       allows, or holds values that do not fit it.
 //
 // Every part means: the declaration; each published value; no key in the
 // domain that its type leaves out; no declared member without a readable
 // value; no number written without quotes in a member declared as anything
 // but an integer, since such a number is not that string; and an address
-// that is written as one: "0x" and 40 hexadecimal digits, the 160 bits
-// EIP-712 encodes an address as ("Addresses are encoded as uint160"). Any difference gives the
+// that is written as one. Any difference gives the
 // same answer, and the answer is "could not be verified", not "forged": why
 // a domain differs is not something we know.
 //
@@ -295,42 +345,58 @@ const KNOWN = [
 // publish this domain, not that signing is safe.
 //
 // An ERC-2612 permit has no list of contracts: the contract is the token
-// itself, and it can be any token. What the standard does publish is the
-// domain's declaration, so that is compared, and for the same reason as
-// everywhere else: the token is read from the domain, and an address that is
-// not declared as part of the domain may not be signed. Its roles describe
-// what the standard says such a message means; whether that token follows the
-// standard is not something this code can check. DAI's permit is listed,
-// because DAI is one contract; the same shape sent to any other token is
-// 'domain-not-listed'.
+// itself, and it can be any token. Its domain is held to EIP-712 instead:
+// every member must be one of the standard's fields with the standard's
+// type. The token is the domain's verifyingContract; a domain that does not
+// declare one says nothing about which token it is, and the token role is
+// then left out. The roles describe what the standard says such a message
+// means; whether that token follows the standard is not something this code
+// can check. DAI's permit is listed, because DAI is one contract; the same
+// shape sent to any other token is 'domain-not-listed'.
 export function recognise({ primaryType, types, domain }) {
   const declared = encodeType(primaryType, types);
   const known = KNOWN.find((entry) => entry.encodeType === declared);
   if (!known) return null;
 
   // A copy, so that nothing a caller does to the answer reaches the table.
-  const { kind, domains } = known;
+  const { kind, domains, anyDomain } = known;
   const facts = structuredClone(known);
   delete facts.encodeType;
   delete facts.domains;
+  delete facts.anyDomain;
   if (!Object.hasOwn(types, 'EIP712Domain')) return { kind, unverified: 'domain-not-declared' };
 
   const declaration = encodeType('EIP712Domain', types);
   const member = (name) => domain.find((field) => field.name === name);
-  const listed =
-    domain.every(asDeclared) &&
-    domains.some(
-      (published) =>
-        published.declaration === declaration &&
-        Object.entries(published.values).every(([name, value]) => same(name, member(name), value)),
-    );
-  return listed ? facts : { kind, unverified: 'domain-not-listed' };
+  const fits = anyDomain
+    ? standardDomain(types.EIP712Domain)
+    : domains.some(
+        (published) =>
+          published.declaration === declaration &&
+          Object.entries(published.values).every(([name, value]) => same(name, member(name), value)),
+      );
+  if (!fits || !domain.every(asDeclared)) {
+    return { kind, unverified: anyDomain ? 'domain-not-standard' : 'domain-not-listed' };
+  }
+
+  if (!member('verifyingContract')) delete facts.roles.token;
+  return facts;
+}
+
+// Whether a declared domain is made of EIP-712's fields only, each once.
+function standardDomain(members) {
+  const names = members.map(({ name }) => name);
+  return (
+    members.length > 0 &&
+    new Set(names).size === names.length &&
+    members.every(({ name, type }) => Object.hasOwn(DOMAIN_FIELDS, name) && DOMAIN_FIELDS[name] === type)
+  );
 }
 
 // Whether a domain member holds the kind of value its type declares.
 function asDeclared({ type, value, undeclared, unread, bare }) {
   if (undeclared || unread) return false;
-  if (type === 'address') return typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value);
+  if (type === 'address') return isAddress(value);
   return !bare || /^u?int\d*$/.test(type);
 }
 
