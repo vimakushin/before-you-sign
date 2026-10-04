@@ -141,7 +141,7 @@ export default {
       'The expiration of the allowance is zero. In Permit2 that does not mean "no expiration": the allowance lasts until the end of the block in which the signature is submitted, and within that block it can be spent up to the full amount.',
     sigDeadline: 'Signature deadline, the last moment the signature can be submitted: {time}',
     unlimited: "The amount below is the largest number this field can hold. Permit2's source calls that an unlimited approval.",
-    unlimitedInBatch: "At least one of the amounts below is the largest number its field can hold; it is marked where it appears. Permit2's source calls that an unlimited approval.",
+    unlimitedInBatch: "At least one amount below is the largest number its field can hold. Under each such amount, a line says so. Permit2's source calls an amount of that size an unlimited approval.",
     transfer: 'A valid signature, once submitted to Permit2, lets the address {spender} transfer the token at {token} from whoever signs, one time, up to the amount below. "One time" means the signature works for one transfer. It says nothing about the size of the transfer; the amount below is its limit.',
     transferRecipient: "The request does not say who receives the tokens. The recipient is named by whoever submits the signature. Permit2's source says the submitter has to be {spender}.",
     transferDeadline: 'Signature deadline, the last moment the signature can be submitted: {time}',
