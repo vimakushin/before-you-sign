@@ -14,25 +14,67 @@
 // Every string and every role below was read from the source named next to
 // it, at the commit in the link, on 2026-10-04.
 
-// Addresses that the protocols' own client libraries list for their
-// contracts. An address here means only that: the library names it. The lists
-// are not claimed to be complete (Seaport had versions before 1.5), and they
-// are not tied to a network: an address listed for one network is accepted on
-// any.
+// Domains of the contracts these protocols are deployed as: the declaration
+// of EIP712Domain each contract hashes, and the values it hashes with it.
+// The chain id is part of every declaration but is not listed among the
+// values: it differs from network to network and there is nothing to compare
+// it with. DAI is the exception, because the address below is its address on
+// one particular network.
 //
-// Permit2 has one address on most networks and a different one on network
-// 324; both are in Uniswap's SDK:
+// A domain here means only that the protocol's authors publish it. The lists
+// are not claimed to be complete (Seaport had versions before 1.5), and apart
+// from DAI they are not tied to a network: an address published for one
+// network is accepted on any.
+
+// Permit2. Declaration and name: EIP712.sol hashes
+// "EIP712Domain(string name,uint256 chainId,address verifyingContract)" and
+// "Permit2"; there is no version. Addresses: Uniswap's SDK gives one for
+// network 324 and another for every other network.
+// https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/EIP712.sol
 // https://github.com/Uniswap/sdks/blob/17d70b1b1068fc1b5ce79a89fb5901e562a22e79/sdks/permit2-sdk/src/constants.ts
 const PERMIT2 = [
   '0x000000000022D473030F116dDEE9F6B43aC78BA3',
   '0x0000000000225e31D15943971F47aD3022F714Fa',
-];
+].map((verifyingContract) => ({
+  declaration: 'EIP712Domain(string name,uint256 chainId,address verifyingContract)',
+  values: { name: 'Permit2', verifyingContract },
+}));
 
-// Seaport 1.6 and 1.5, from OpenSea's seaport-js:
+const NAME_VERSION_CHAIN_CONTRACT =
+  'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)';
+
+// Seaport 1.6 and 1.5. Declaration and version: ConsiderationBase.sol of each
+// version; name: Seaport.sol of each version returns "Seaport"; addresses:
+// OpenSea's seaport-js.
+// https://github.com/ProjectOpenSea/seaport-core/blob/523097f9cee66c15d308c900c50f336b291cda08/src/lib/ConsiderationBase.sol
+// https://github.com/ProjectOpenSea/seaport-core/blob/523097f9cee66c15d308c900c50f336b291cda08/src/Seaport.sol
+// https://github.com/ProjectOpenSea/seaport/blob/ab3b5cb6e10580ea979d63983e409e679935c702/contracts/lib/ConsiderationBase.sol
+// https://github.com/ProjectOpenSea/seaport/blob/ab3b5cb6e10580ea979d63983e409e679935c702/contracts/Seaport.sol
 // https://github.com/ProjectOpenSea/seaport-js/blob/cb6466465401038233bbc9c4917ed22ac9f8bf8b/src/constants.ts
 const SEAPORT = [
-  '0x0000000000000068F116a894984e2DB1123eB395',
-  '0x00000000000000ADc04C56Bf30aC9d3c0aAF14dC',
+  ['1.6', '0x0000000000000068F116a894984e2DB1123eB395'],
+  ['1.5', '0x00000000000000ADc04C56Bf30aC9d3c0aAF14dC'],
+].map(([version, verifyingContract]) => ({
+  declaration: NAME_VERSION_CHAIN_CONTRACT,
+  values: { name: 'Seaport', version, verifyingContract },
+}));
+
+// DAI. Declaration, name and version: dai.sol. Address: MCD_DAI in Maker's
+// own record of its first mainnet release. That makes it an address on
+// Ethereum mainnet, which EIP-155 numbers 1 ("1 | Ethereum mainnet").
+// https://github.com/makerdao/dss/blob/fa4f6630afb0624d04a003e920b0d71a00331d98/src/dai.sol
+// https://github.com/makerdao/mcd-changelog/blob/d73dfd17d54ad1bb00d8087bce25dd2866e3f397/releases/mainnet/1.0.0/contracts.json
+// https://github.com/ethereum/EIPs/blob/3b3c832577ec4205d463d990d52006e299962449/EIPS/eip-155.md
+const DAI = [
+  {
+    declaration: NAME_VERSION_CHAIN_CONTRACT,
+    values: {
+      name: 'Dai Stablecoin',
+      version: '1',
+      chainId: '1',
+      verifyingContract: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+    },
+  },
 ];
 
 const KNOWN = [
@@ -66,6 +108,7 @@ const KNOWN = [
     // version" (it no longer uses LibNote); the type string and the permit
     // function are what was read from it.
     // https://github.com/makerdao/dss/blob/fa4f6630afb0624d04a003e920b0d71a00331d98/src/dai.sol
+    domains: DAI,
     kind: 'dai-permit',
     encodeType: 'Permit(address holder,address spender,uint256 nonce,uint256 expiry,bool allowed)',
     roles: {
@@ -90,7 +133,7 @@ const KNOWN = [
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/libraries/PermitHash.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/interfaces/IAllowanceTransfer.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/AllowanceTransfer.sol
-    contracts: PERMIT2,
+    domains: PERMIT2,
     kind: 'permit2-permit-single',
     encodeType:
       'PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)',
@@ -105,7 +148,7 @@ const KNOWN = [
   {
     // The same as PermitSingle with a list of tokens and one spender for all.
     // Same sources.
-    contracts: PERMIT2,
+    domains: PERMIT2,
     kind: 'permit2-permit-batch',
     encodeType:
       'PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)',
@@ -138,7 +181,7 @@ const KNOWN = [
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/interfaces/ISignatureTransfer.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/README.md
-    contracts: PERMIT2,
+    domains: PERMIT2,
     kind: 'permit2-permit-transfer-from',
     encodeType:
       'PermitTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline)TokenPermissions(address token,uint256 amount)',
@@ -161,7 +204,7 @@ const KNOWN = [
     // Seaport 1.5 declares the same types: its three type strings, at the
     // commit the repository's tag `1.5` points to, join into the string below.
     // https://github.com/ProjectOpenSea/seaport/blob/ab3b5cb6e10580ea979d63983e409e679935c702/contracts/lib/ConsiderationBase.sol
-    contracts: SEAPORT,
+    domains: SEAPORT,
     kind: 'seaport-order',
     encodeType:
       'OrderComponents(address offerer,address zone,OfferItem[] offer,ConsiderationItem[] consideration,uint8 orderType,uint256 startTime,uint256 endTime,bytes32 zoneHash,uint256 salt,bytes32 conduitKey,uint256 counter)ConsiderationItem(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount,address recipient)OfferItem(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount)',
@@ -175,52 +218,67 @@ const KNOWN = [
   },
 ];
 
-// Takes a successful result of parseRequest (ok: true) and returns the entry
-// above that the request's main type matches, or null. A role is a path into
-// that result: `domain` or `message`, then member names; `[]` means every
-// item of a list.
+// Takes a successful result of parseRequest (ok: true) and returns null for a
+// type that is not in the table, and otherwise one of:
+//
+//   { kind, roles }       the roles can be read as the table describes them;
+//   { kind, unverified }  the message has this shape, and that is all we know.
+//
+// A role is a path into the parse result: `domain` or `message`, then
+// member names; `[]` means every item of a list.
 //
 // The types say what shape the message has, not which contract will receive
 // the signature: any contract can ask for a signature over these same types
-// and do something else with it. So for a protocol that lives at published
-// addresses, the roles are returned only when the request is addressed to one
-// of them. Otherwise the answer is { kind, unlistedContract: true } and no
-// roles: the message has this shape, and what will be done with the signature
-// is not something we know. The flag covers a request that names no contract
-// at all, so it says "not on the list", not "another contract".
+// and do something else with it. A signature is tied to a contract by the
+// domain, and a contract accepts it only if the whole domain is the one it
+// hashes itself: the declaration, the name, the version, the address. So that
+// is what is compared, not the address alone. EIP-712 calls verifyingContract
+// "the address of the contract that will verify the signature".
 //
-// The contract is the domain's verifyingContract, which EIP-712 defines as
-// "the address of the contract that will verify the signature". It counts
-// only if it is part of what gets signed: declared in EIP712Domain, once, as
-// an `address`. A key that merely sits in the domain object is not hashed,
-// and a contract at some other address could accept that signature. When the
-// request declares no EIP712Domain at all, there is no declaration to hold
-// the field to, and it is taken as written.
+// `unverified` says why the comparison did not succeed:
 //
-// The rule is one-sided. An address on the list lets us name the protocol; an
-// address off the list is not a finding about that address.
+//   'domain-not-declared'  the request has no EIP712Domain among its types.
+//       What a wallet would sign as the domain is then unknown, and so is
+//       whether the address in the request would be part of it. The first
+//       version took the address as written in this case; that let a request
+//       be named after a protocol on the strength of a field nothing binds.
+//   'domain-not-listed'    the domain is declared and is not one of those
+//       published for this protocol.
 //
-// ERC-2612 and DAI permits have no list: the contract is the token itself,
-// and it can be any token.
+// The rule is one-sided. A listed domain lets us name the protocol; a domain
+// that is not listed is not a finding about that contract.
+//
+// An ERC-2612 permit has no list: the contract is the token itself, and it
+// can be any token. Its roles are always returned, and they describe what the
+// standard says such a message means; whether that token follows the standard
+// is not something this code can check. DAI's permit is listed, because DAI
+// is one contract; the same shape sent to any other token is 'domain-not-listed'.
 export function recognise({ primaryType, types, domain }) {
   const declared = encodeType(primaryType, types);
   const known = KNOWN.find((entry) => entry.encodeType === declared);
   if (!known) return null;
 
-  const { kind, roles, contracts } = known;
-  if (!contracts) return { kind, roles };
+  const { kind, roles, domains } = known;
+  if (!domains) return { kind, roles };
+  if (!Object.hasOwn(types, 'EIP712Domain')) return { kind, unverified: 'domain-not-declared' };
 
-  // An address is a number written in hexadecimal: the case of its letters
-  // does not change which address it is.
-  const fields = domain.filter((field) => field.name === 'verifyingContract');
-  const [contract] = fields;
-  const listed =
-    fields.length === 1 &&
-    !contract.undeclared &&
-    (contract.type === undefined || contract.type === 'address') &&
-    typeof contract.value === 'string' &&
-    contracts.some((address) => address.toLowerCase() === contract.value.toLowerCase());
-  return listed ? { kind, roles } : { kind, unlistedContract: true };
+  const declaration = encodeType('EIP712Domain', types);
+  const valueOf = (name) => domain.find((field) => field.name === name && !field.undeclared)?.value;
+  const listed = domains.some(
+    (published) =>
+      published.declaration === declaration &&
+      Object.entries(published.values).every(([name, value]) => same(name, valueOf(name), value)),
+  );
+  return listed ? { kind, roles } : { kind, unverified: 'domain-not-listed' };
+}
+
+// An address is a number written in hexadecimal: the case of its letters does
+// not change which address it is. Every other value is compared as written.
+function same(name, actual, published) {
+  if (typeof actual !== 'string') return false;
+  return name === 'verifyingContract'
+    ? actual.toLowerCase() === published.toLowerCase()
+    : actual === published;
 }
 
 // EIP-712, "Definition of encodeType": the type is written as its name and
