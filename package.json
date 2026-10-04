@@ -1,0 +1,8 @@
+{
+  "name": "before-you-sign",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
