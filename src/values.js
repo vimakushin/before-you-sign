@@ -24,6 +24,14 @@ export function readInteger(value) {
 
 // An address as EIP-712 encodes it, 160 bits ("Addresses are encoded as
 // uint160"): "0x" and 40 hexadecimal digits.
+//
+// The case of the letters is not looked at. ERC-55 uses it as a checksum
+// against mistyped addresses ("if the `i`th digit is a letter ... print it in
+// uppercase if the `4*i`th bit of the hash of the lowercase hexadecimal
+// address is 1 otherwise print it in lowercase"). Checking it needs that
+// hash, which this project does not compute, so an address with a broken
+// checksum is read like any other; the list in unknowns.js says so.
+// https://github.com/ethereum/ERCs/blob/365b4c02879f3e882b91281d42b4f57b406205e9/ERCS/erc-55.md
 export function isAddress(value) {
   return typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value);
 }
@@ -130,6 +138,14 @@ export function readAmount(field, decimals) {
     ...marks(read),
     assumed: ASSUMED_DECIMALS.map((guess) => ({ decimals: guess, amount: withDecimals(read.integer, guess) })),
   };
+}
+
+// A quantity that has no decimals to convert by: an item of a collection, or
+// the network's own coin, whose decimals this project does not convert by
+// either. The exact number and whether it is the largest its type holds.
+export function readCount(field) {
+  const read = readUnsigned(field);
+  return read === null ? null : marks(read);
 }
 
 // The furthest moment a JavaScript Date can express, in seconds: the language

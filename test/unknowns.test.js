@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { parseRequest } from '../src/parse.js';
 import { recognise } from '../src/known-types.js';
 import { notChecked } from '../src/unknowns.js';
+import { seaportOrder } from './fixtures/published-types.js';
 
 // Both requests are the ones used in the other test files: the example from
 // the text of EIP-712 and the Permit2 request composed by the project owner.
@@ -12,7 +13,7 @@ const read = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.ur
 const mail = read('eip712-example.json');
 const permitSingle = read('permit2-permit-single.json');
 
-const ALWAYS = ['whose-addresses', 'token-genuine', 'after-signing'];
+const ALWAYS = ['whose-addresses', 'token-genuine', 'contract-code', 'address-checksum'];
 
 function listFor(text) {
   const parsed = parseRequest(text);
@@ -82,6 +83,37 @@ test('a number or an address that could not be read is listed, whatever the reas
   assert.ok(!listFor(permitSingle).includes('unread-values'));
 });
 
+test('a Seaport order mentions decimals unless every item was read and none is a token', () => {
+  const order = (...kinds) => {
+    const item = (itemType) => ({ itemType, token: '0x1111111111111111111111111111111111111111', identifierOrCriteria: '0', startAmount: '1', endAmount: '1' });
+    return JSON.stringify({
+      types: {
+        ...seaportOrder,
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+        ],
+      },
+      primaryType: 'OrderComponents',
+      domain: { name: 'Seaport', version: '1.6', chainId: '1', verifyingContract: '0x0000000000000068F116a894984e2DB1123eB395' },
+      message: { offer: kinds.map(item), consideration: [] },
+    });
+  };
+  for (const kinds of [['1'], [1], ['01'], ['0x1'], ['2', '1'], [' 1'], ['2', 'one']]) {
+    assert.ok(listFor(order(...kinds)).includes('token-decimals'), JSON.stringify(kinds));
+  }
+  for (const kinds of [['2'], ['0', '3'], ['4', '5'], []]) {
+    assert.ok(!listFor(order(...kinds)).includes('token-decimals'), JSON.stringify(kinds));
+  }
+});
+
+test('a type that is not explained still says when its domain type is not declared', () => {
+  const text = changed(mail, (data) => delete data.types.EIP712Domain);
+  assert.deepEqual(listFor(text), [...ALWAYS, 'meaning-of-fields', 'contract-not-established']);
+});
+
 test('answers for a request nested as deep as the parser accepts', () => {
   const nested = changed(mail, (data) => {
     data.types.Mail = [{ name: 'to', type: 'Mail[]' }];
@@ -106,11 +138,11 @@ test('an ERC-2612 permit with a domain EIP-712 does not allow is not said to be 
     data.domain = { owner: '0x1111111111111111111111111111111111111111' };
     data.message = { owner: data.domain.owner, spender: data.domain.owner, value: '1', nonce: '0', deadline: '1' };
   });
-  assert.deepEqual(listFor(text), [...ALWAYS, 'meaning-of-fields', 'contract-not-verified']);
+  assert.deepEqual(listFor(text), [...ALWAYS, 'meaning-of-fields', 'contract-not-established']);
 });
 
 test('a contract that could not be verified is said so, and its fields are not explained', () => {
-  const expected = [...ALWAYS, 'meaning-of-fields', 'contract-not-verified'];
+  const expected = [...ALWAYS, 'meaning-of-fields', 'contract-not-established'];
   // Compared with a list and not found on it: the list is not complete.
   assert.deepEqual(listFor(changed(permitSingle, (data) => (data.domain.name = 'Other'))), [
     ...expected,

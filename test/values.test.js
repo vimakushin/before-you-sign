@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseRequest } from '../src/parse.js';
 import { recognise } from '../src/known-types.js';
-import { readInteger, largestOf, withDecimals, readAmount, readTime } from '../src/values.js';
+import { readInteger, largestOf, withDecimals, readAmount, readCount, readTime } from '../src/values.js';
+import { networkName } from '../src/networks.js';
 
 // The numbers in this file are composed for the tests and checked by
 // arithmetic; none of them is taken from a request a wallet showed. The one
@@ -115,6 +116,19 @@ test('says when what gets signed depends on how the wallet reads a bare number',
   assert.equal(readAmount({ type: 'uint256', value: '9007199254740991', bare: true }).dependsOnWallet, undefined);
   // A large number that a JavaScript number holds exactly: 2^60.
   assert.equal(readAmount({ type: 'uint256', value: (2n ** 60n).toString(), bare: true }).dependsOnWallet, undefined);
+});
+
+test('counts whole items without converting them', () => {
+  assert.deepEqual(readCount({ type: 'uint256', value: '1' }), { exact: '1', largest: false });
+  assert.equal(readCount({ type: 'uint256', value: 'one' }), null);
+});
+
+test('names only the networks EIP-155 names', () => {
+  assert.equal(networkName('1'), 'Ethereum mainnet');
+  assert.equal(networkName('5'), 'Goerli');
+  for (const other of ['2', '137', '324', '1337', '01', 'constructor', undefined]) {
+    assert.equal(networkName(other), null, String(other));
+  }
 });
 
 test('does not read an amount written in a notation it does not know', () => {

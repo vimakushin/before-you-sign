@@ -212,8 +212,10 @@ const KNOWN = [
     // The same as PermitSingle with a list of tokens and one spender for all.
     // Same sources.
     domains: PERMIT2,
+    // Nothing in the sources read speaks of the batch separately; its members
+    // are explained by what is quoted for the single permit above.
     kind: 'permit2-permit-batch',
-    unchecked: ['network-not-compared', 'prior-approval-of-permit2'],
+    unchecked: ['network-not-compared', 'prior-approval-of-permit2', 'explained-by-single-permit'],
     encodeType:
       'PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)',
     roles: {
@@ -248,8 +250,11 @@ const KNOWN = [
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/SignatureTransfer.sol
     // https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/README.md
     domains: PERMIT2,
+    // Whether this kind of signature needs the token to have been approved
+    // to Permit2 beforehand was not found in the sources read, and the answer
+    // says so rather than staying silent where the allowance types speak.
     kind: 'permit2-permit-transfer-from',
-    unchecked: ['network-not-compared'],
+    unchecked: ['network-not-compared', 'prior-approval-not-found'],
     encodeType:
       'PermitTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline)TokenPermissions(address token,uint256 amount)',
     roles: {
@@ -274,7 +279,15 @@ const KNOWN = [
     domains: SEAPORT,
     // Only five of the order's eleven members have a role here; zone,
     // orderType, zoneHash, salt, conduitKey and counter are not explained.
+    //
+    // What kind of thing an item is, by its `itemType`: the documentation
+    // lists "NATIVE = 0", "ERC20 = 1", "ERC721 = 2", "ERC1155 = 3",
+    // "ERC721_WITH_CRITERIA = 4", "ERC1155_WITH_CRITERIA = 5". Only an ERC20
+    // amount is a number of smallest token units to convert by decimals; an
+    // item of a collection is counted in whole items, and the network's coin
+    // is not converted here.
     kind: 'seaport-order',
+    itemKinds: ['native', 'erc20', 'erc721', 'erc1155', 'erc721-criteria', 'erc1155-criteria'],
     unchecked: ['network-not-compared', 'other-order-fields'],
     encodeType:
       'OrderComponents(address offerer,address zone,OfferItem[] offer,ConsiderationItem[] consideration,uint8 orderType,uint256 startTime,uint256 endTime,bytes32 zoneHash,uint256 salt,bytes32 conduitKey,uint256 counter)ConsiderationItem(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount,address recipient)OfferItem(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount)',

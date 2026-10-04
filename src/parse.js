@@ -18,6 +18,7 @@
 // refusals are 'unexpected-shape' (the JSON is not laid out the way this
 // parser expects a signing request to be) and 'main-type-not-found' (the type
 // named as the main one is not among the declared types).
+// 'possible-secret-words' is the one refusal that is about the text itself.
 
 const REQUIRED = ['types', 'primaryType', 'domain', 'message'];
 
@@ -27,6 +28,7 @@ export function parseRequest(pasted) {
   // syntax errors, so everything below works on the trimmed text.
   const text = pasted.trim();
   if (text === '') return refuse('empty');
+  if (looksLikeSecretWords(text)) return refuse('possible-secret-words');
 
   let asWritten;
   let data;
@@ -76,6 +78,27 @@ export function parseRequest(pasted) {
     if (error instanceof RangeError) return refuse('too-deep');
     throw error;
   }
+}
+
+// This page promises never to take a recovery phrase. A recovery phrase is a
+// row of plain words, and a signing request is never that: so text with no
+// curly bracket in it that is ten or more words is not read at all. Wallets
+// show a phrase as a numbered grid, and copying from one brings the numbers
+// and punctuation along, so those are set aside before the words are counted:
+// "1. apple 2. river" is two words. The refusal carries no part of the text,
+// and the page clears its input when it gets this answer.
+//
+// What this does not catch, and is not claimed to: a private key, which is a
+// string of hexadecimal digits and looks like any other piece of a request.
+function looksLikeSecretWords(text) {
+  if (/[{}]/.test(text)) return false;
+  const words = text
+    .split(/\s+/)
+    .map((token) => token.replace(/^[\d.,:;()"'«»]+|[\d.,:;()"'«»]+$/g, ''))
+    .filter((word) => word !== '');
+  // Letters and the marks that combine with them: a phrase in a script with
+  // accents may arrive with the accents as separate characters.
+  return words.length >= 10 && words.every((word) => /^[\p{L}\p{M}]+$/u.test(word));
 }
 
 function refuse(reason, detail) {
@@ -207,7 +230,13 @@ function readValue(type, value, asWritten, types) {
     if (!isObject(value)) return { type, value, unread: true };
     return { type, fields: readStruct(type, value, asWritten, types) };
   }
-  if (typeof value !== 'string' && typeof value !== 'boolean') {
+  // A bool is read only from JSON's own true and false. The string "false",
+  // the number 1 and anything else in its place is not a yes or a no we can
+  // vouch for: in DAI's permit this member decides between granting an
+  // unlimited allowance and revoking one.
+  // Everything else arrives as a string: text, addresses, byte strings, and
+  // numbers, which were quoted before parsing.
+  if (typeof value !== (type === 'bool' ? 'boolean' : 'string')) {
     return { type, value, unread: true };
   }
   return typeof asWritten === 'number' ? { type, value, bare: true } : { type, value };

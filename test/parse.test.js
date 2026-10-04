@@ -122,6 +122,43 @@ test('refuses empty input', () => {
   assert.deepEqual(parseRequest('  \n '), { parsed: false, reason: 'empty' });
 });
 
+test('does not read a row of plain words, which is what a recovery phrase looks like', () => {
+  // Twelve ordinary words, composed for this test; not a real recovery phrase.
+  const words = 'apple river stone candle forest window silver garden bridge yellow market planet';
+  assert.deepEqual(parseRequest(words), { parsed: false, reason: 'possible-secret-words' });
+  assert.deepEqual(parseRequest('  ' + words.replaceAll(' ', '\n') + '\n'), {
+    parsed: false,
+    reason: 'possible-secret-words',
+  });
+  // As copied from a numbered grid, with commas, in quotes, with accents written as separate marks.
+  const list = words.split(' ');
+  const numbered = list.map((word, index) => `${index + 1}. ${word}`).join(' ');
+  const accented = list.map((word) => word + '\u0301').join(' ');
+  for (const text of [numbered, list.join(', ') + '.', `"${words}"`, accented]) {
+    assert.equal(parseRequest(text).reason, 'possible-secret-words', text);
+  }
+  // Nine words, and anything with a curly bracket, are ordinary non-JSON.
+  assert.equal(parseRequest(list.slice(0, 9).join(' ')).reason, 'not-json');
+  assert.equal(parseRequest(words + ' {').reason, 'not-json');
+  // A private key is not caught, and the project does not claim to catch it.
+  assert.equal(parseRequest('0x' + 'ab'.repeat(32)).reason, 'not-json');
+});
+
+test('reads a yes or a no only from true and false themselves', () => {
+  const withFlag = (flag) =>
+    parseRequest(
+      damaged((data) => {
+        data.types.Mail.push({ name: 'urgent', type: 'bool' });
+        data.message.urgent = flag;
+      }),
+    ).message.at(-1);
+  assert.deepEqual(withFlag(true), { name: 'urgent', type: 'bool', value: true });
+  assert.deepEqual(withFlag(false), { name: 'urgent', type: 'bool', value: false });
+  for (const flag of ['false', 'true', 1, 0, '', null]) {
+    assert.equal(withFlag(flag).unread, true, JSON.stringify(flag));
+  }
+});
+
 test('refuses text that is not JSON', () => {
   assert.deepEqual(parseRequest('Signature request'), { parsed: false, reason: 'not-json' });
 });
