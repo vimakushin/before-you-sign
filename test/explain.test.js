@@ -90,8 +90,11 @@ function entryLines(entry) {
 }
 function lines(answer) {
   if (answer.refused) return answer.refused;
-  return [answer.main, ...answer.notable, ...[...answer.details, ...answer.mechanics].flatMap(entryLines), ...answer.notChecked];
+  return [answer.main, ...framed(answer), ...[...answer.details, ...answer.mechanics].flatMap(entryLines), ...answer.notChecked];
 }
+// What stands in the frames under the main sentence: each fact and its note.
+const framed = (answer) => answer.notable.flatMap(({ text, note }) => (note ? [text, note] : [text]));
+const facts = (answer) => answer.notable.map(({ text }) => text);
 const labelled = (entries, label) => entries.find((entry) => entry.label === label);
 
 test('every answer is complete: no blank left unfilled, nothing missing, in both languages', () => {
@@ -126,7 +129,7 @@ test('no sentence has an address inside it: an address stands alone under its la
     );
   for (const [name, text] of Object.entries(REQUESTS)) {
     const answer = respond(text, en, options('en'));
-    for (const sentence of [answer.main, ...answer.notable, ...sentences([...answer.details, ...answer.mechanics])]) {
+    for (const sentence of [answer.main, ...framed(answer), ...sentences([...answer.details, ...answer.mechanics])]) {
       assert.doesNotMatch(sentence, /0x[0-9a-fA-F]{40}/, `${name}: ${sentence}`);
     }
   }
@@ -147,30 +150,42 @@ test('an amount with no limit is in the main sentence, and said again next to th
   const largest = (2n ** 256n - 1n).toString();
   const standard = respond(erc2612(largest), en, options('en'));
   assert.equal(standard.main, en.main.erc2612);
-  assert.deepEqual(standard.notable, [en.amount.largestNotable, en.amount.largestUnexplained]);
+  assert.deepEqual(standard.notable, [{ text: en.amount.largestNotable, note: en.amount.largestUnexplained }]);
   assert.deepEqual(labelled(standard.details, en.amount.exact).notes.slice(0, 1), [en.amount.largest]);
-  assert.ok(respond(transfer, en, options('en')).notable.includes(en.amount.largestUnexplained));
+  assert.ok(framed(respond(transfer, en, options('en'))).includes(en.amount.largestUnexplained));
   assert.deepEqual(respond(erc2612('1000000'), en, options('en')).notable, []);
 });
 
 test('a deadline that has passed is said straight under the main sentence, and next to the date', () => {
   const answer = respond(batch, en, options('en'));
-  assert.deepEqual(answer.notable, [en.time.signatureDeadlinePassed]);
+  // With it, what the protocol's own source says a passed deadline means.
+  assert.deepEqual(answer.notable, [{ text: en.time.signatureDeadlinePassed, note: en.permit2.rejectsLate }]);
   const deadline = labelled(answer.details, en.time.signatureDeadline);
   assert.ok(deadline.value.endsWith('(10 minutes ago)'));
   assert.deepEqual(deadline.notes, [en.time.passed]);
   // The owner's request: its signature deadline is a fixed date, here set in the past.
   const later = respond(permitSingle, en, { ...options('en'), now: 1790072010 + 5 });
-  assert.deepEqual(later.notable, [en.time.signatureDeadlinePassed]);
+  assert.deepEqual(facts(later), [en.time.signatureDeadlinePassed]);
   // Once both of its times are behind, both are said, the signature's first.
   const muchLater = respond(permitSingle, ru, { ...options('ru'), now: 1792662210 + 5 });
-  assert.deepEqual(muchLater.notable, [ru.time.signatureDeadlinePassed, ru.permit2.expirationPassed]);
+  assert.deepEqual(muchLater.notable, [
+    { text: ru.time.signatureDeadlinePassed, note: ru.permit2.rejectsLate },
+    { text: ru.permit2.expirationPassed },
+  ]);
   // In a batch a passed expiration stays next to its token.
-  assert.deepEqual(respond(batch, en, { ...options('en'), now: NOW + 86400 * 500 }).notable, [en.time.signatureDeadlinePassed]);
-  assert.deepEqual(respond(seaport, en, { ...options('en'), now: NOW + 86400 * 2 }).notable, [en.seaport.endPassed]);
-  assert.deepEqual(respond(erc2612('1'), en, { ...options('en'), now: NOW + 7200 }).notable, [en.time.signatureDeadlinePassed]);
+  assert.deepEqual(facts(respond(batch, en, { ...options('en'), now: NOW + 86400 * 500 })), [en.time.signatureDeadlinePassed]);
+  assert.deepEqual(facts(respond(seaport, en, { ...options('en'), now: NOW + 86400 * 2 })), [en.seaport.endPassed]);
+  assert.deepEqual(respond(erc2612('1'), en, { ...options('en'), now: NOW + 7200 }).notable, [
+    { text: en.time.signatureDeadlinePassed, note: en.erc2612.rejectsLate },
+  ]);
+  assert.deepEqual(framed(respond(transfer.replace(/"deadline":"\d+"/, '"deadline":"5"'), en, options('en'))).slice(-2), [
+    en.time.signatureDeadlinePassed,
+    en.permit2.rejectsLate,
+  ]);
   // A deadline of zero has passed; a DAI expiry of zero means no deadline, and is not said to have passed.
-  assert.deepEqual(respond(dai(true, '5'), en, options('en')).notable, [en.time.signatureDeadlinePassed]);
+  assert.deepEqual(respond(dai(true, '5'), en, options('en')).notable, [
+    { text: en.time.signatureDeadlinePassed, note: en.dai.rejectsLate },
+  ]);
   assert.deepEqual(respond(dai(true, '0'), en, options('en')).notable, []);
   assert.deepEqual(respond(seaport, en, options('en')).notable, []);
 });
@@ -179,6 +194,31 @@ test('the exact amount stands right under its label, with everything said about 
   const amount = labelled(respond(erc2612('1000000'), en, options('en')).details, en.amount.exact);
   assert.equal(amount.value, '1000000');
   assert.equal(amount.notes[0], en.amount.decimalsUnknown);
+  // The page puts the field for decimals under an amount marked this way.
+  assert.equal(amount.decimals, true);
+});
+
+test('an amount that is not converted says that decimals change nothing, and asks for none', () => {
+  const unlimited = labelled(respond(permitSingle, en, options('en', 6)).details, en.amount.exact);
+  assert.deepEqual(unlimited.notes, [en.permit2.unlimited, en.permit2.unlimitedDecimals]);
+  assert.equal(unlimited.decimals, undefined);
+  const largest = labelled(respond(erc2612((2n ** 256n - 1n).toString()), en, options('en')).details, en.amount.exact);
+  assert.deepEqual(largest.notes, [en.amount.largest, en.amount.largestDecimals]);
+});
+
+test('the list of what was not checked speaks only of what the answer has', () => {
+  const list = (text, now = NOW) => respond(text, en, { ...options('en'), now }).notChecked;
+  const decimals = en.notChecked['token-decimals'];
+  const clock = en.notChecked['device-clock'];
+  // Nothing is converted when the one amount is the largest its field holds.
+  assert.ok(!list(permitSingle).includes(decimals));
+  assert.ok(list(erc2612('1000000')).includes(decimals));
+  assert.ok(list(batch).includes(decimals));
+  // A DAI permit with no deadline shows no distance in time.
+  assert.ok(!list(dai(true, '0')).includes(clock));
+  assert.ok(list(dai(true, String(NOW + 60))).includes(clock));
+  // The EIP-712 example has no token, and its answer has no line about one.
+  assert.ok(!list(mail).includes(en.notChecked['token-genuine']));
 });
 
 test('decimals are never guessed: two marked assumptions, or the one figure the person asked for', () => {
@@ -309,7 +349,7 @@ test('refusals say what was seen', () => {
   assert.deepEqual(respond(mail.slice(0, 200), en, options('en')).refused, [en.refusal.truncated]);
   assert.deepEqual(respond('{"types":{}}', en, options('en')).refused, [
     en.refusal['unexpected-shape'],
-    'The part we did not find, or could not read: "primaryType".',
+    'The part we did not find, or could not read: the name of the main kind of data.',
   ]);
   const renamed = mail.replace('"primaryType":"Mail"', '"primaryType":"Letter"');
   assert.match(respond(renamed, en, options('en')).refused[0], /names "Letter" as its primary type/);

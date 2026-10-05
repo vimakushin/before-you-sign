@@ -9,7 +9,8 @@
 //               no number in it, so that it can be read at a glance;
 //   notable     what must not be missed, straight under the main sentence: a
 //               deadline that has already passed, an amount that is the
-//               largest its field holds;
+//               largest its field holds. Each is { text, note }: the fact,
+//               and what the protocol's own source says follows from it;
 //   details     who, which token, how much, until when;
 //   mechanics   how the request works: its domain, and what a matching
 //               domain does and does not tell;
@@ -37,17 +38,37 @@ export function respond(pasted, texts, { now, decimals, locale, timeZone }) {
 
   const known = recognise(parsed);
   const say = { t: texts, now, decimals, locale, timeZone };
+  const answer = known?.roles ? explained(parsed, known, say) : shownOnly(parsed, known, say);
+  const said = everyEntry(answer.details);
   return {
-    ...(known?.roles ? explained(parsed, known, say) : shownOnly(parsed, known, say)),
-    notChecked: notChecked(parsed, known).map((code) => fill(texts.notChecked[code], blanksFor(code, parsed))),
+    ...answer,
+    notChecked: notChecked(parsed, known)
+      .filter((code) => SAID_ONLY_WITH[code]?.(said) ?? true)
+      .map((code) => fill(texts.notChecked[code], blanksFor(code, parsed))),
     domain: parsed.domain,
     message: parsed.message,
   };
 }
 
+// Two lines of the "not checked" list speak of something the answer may not
+// contain: a distance in time counted from the device's clock, and an amount
+// that would need the token's decimals. They are listed only when the answer
+// has what they speak of. A DAI permit with no deadline shows no "in 3 days";
+// an amount that is the largest its field holds is not converted at all.
+const SAID_ONLY_WITH = {
+  'device-clock': (entries) => entries.some((entry) => entry.clock),
+  'token-decimals': (entries) => entries.some((entry) => entry.decimals) || !entries.some((entry) => entry.largest),
+};
+
+function everyEntry(entries) {
+  // A sentence is an entry too, and a string has a method named "sub".
+  return entries.flatMap((entry) => [entry, ...everyEntry(Array.isArray(entry.sub) ? entry.sub : [])]);
+}
+
 function refusal({ reason, detail }, t) {
   const lines = [fill(t.refusal[reason], { type: detail })];
-  if (reason === 'unexpected-shape' && detail) lines.push(fill(t.refusal['unexpected-shape-part'], { part: detail }));
+  // The missing part is named in words: "types" is a word of the format.
+  if (reason === 'unexpected-shape' && detail) lines.push(fill(t.refusal['unexpected-shape-part'], { part: t.part[detail] }));
   // The one refusal after which the page empties its input: see parse.js.
   return { refused: lines, clear: reason === 'possible-secret-words' };
 }
@@ -169,16 +190,21 @@ function explained(parsed, known, say) {
   const notable = [];
   // A time that ends something. When it has passed, that is said at the top
   // as well as next to the date.
-  const ending = (label, field, passedText) => {
+  const ending = (label, field, text, note) => {
     const read = timeEntry(label, field, say);
-    if (read.passed) notable.push(passedText);
+    if (read.passed) notable.push({ text, note });
     return read.entry;
   };
-  const signatureDeadline = (field) => ending(t.time.signatureDeadline, field, t.time.signatureDeadlinePassed);
+  // "The deadline has passed" alone leaves a person asking what that means.
+  // What it means is in each source, and saying it is translation: the
+  // contract rejects a signature submitted after its deadline (the quotes
+  // are in known-types.js).
+  const signatureDeadline = (field, rejectsLate) =>
+    ending(t.time.signatureDeadline, field, t.time.signatureDeadlinePassed, rejectsLate);
   // Where the protocol's source says nothing about the largest amount, only
   // the arithmetic is said, and that we do not know what follows from it.
   const largestWithoutSource = (amount) => {
-    if (amount.largest) notable.push(t.amount.largestNotable, t.amount.largestUnexplained);
+    if (amount.largest) notable.push({ text: t.amount.largestNotable, note: t.amount.largestUnexplained });
     return amount.entry;
   };
 
@@ -192,7 +218,7 @@ function explained(parsed, known, say) {
           address(t.label.holder, member('owner')),
           known.roles.token ? { label: t.erc2612.token, value: contract } : t.erc2612.tokenMissing,
           largestWithoutSource(amountEntry(member('value'), true, say)),
-          signatureDeadline(member('deadline')),
+          signatureDeadline(member('deadline'), t.erc2612.rejectsLate),
         ],
         mechanics: [fill(t.erc2612.what, labels), ...network(parsed, say)],
       };
@@ -211,14 +237,14 @@ function explained(parsed, known, say) {
             : { label: t.dai.answerLabel, value: asWritten(allowed), notes: [t.page.unreadNote] },
           readTime(expiry, say.now)?.zero
             ? { label: t.time.signatureDeadline, value: String(expiry.value), notes: [t.dai.expiryZero] }
-            : signatureDeadline(expiry),
+            : signatureDeadline(expiry, t.dai.rejectsLate),
         ],
         mechanics: [t.dai.what, !readable ? t.dai.unread : fill(allowed.value ? t.dai.yes : t.dai.no, labels), ...matched(t.domain.dai)],
       };
     }
     case 'permit2-permit-single': {
       const details = member('details').fields ?? [];
-      const amount = amountEntry(member('amount', details), true, say, t.permit2.unlimited);
+      const amount = amountEntry(member('amount', details), true, say, true);
       return {
         main: amount.largest ? t.main.allowanceUnlimited : t.main.allowance,
         notable,
@@ -227,7 +253,7 @@ function explained(parsed, known, say) {
           address(t.label.token, member('token', details)),
           amount.entry,
           t.permit2.twoTimes,
-          signatureDeadline(member('sigDeadline')),
+          signatureDeadline(member('sigDeadline'), t.permit2.rejectsLate),
           expirationEntry(member('expiration', details), say, notable),
         ],
         mechanics: [fill(t.permit2.single, labels), t.permit2.owner, ...matched(t.domain.permit2)],
@@ -238,7 +264,7 @@ function explained(parsed, known, say) {
       // several tokens, the main sentence alone would not say which one it is.
       const tokens = (member('details').items ?? []).map((entry, index) => {
         const details = entry.fields ?? [];
-        const amount = amountEntry(member('amount', details), true, say, t.permit2.unlimited);
+        const amount = amountEntry(member('amount', details), true, say, true);
         return {
           largest: amount.largest,
           entry: {
@@ -254,7 +280,7 @@ function explained(parsed, known, say) {
           address(t.label.spender, member('spender')),
           ...tokens.map((token) => token.entry),
           t.permit2.twoTimes,
-          signatureDeadline(member('sigDeadline')),
+          signatureDeadline(member('sigDeadline'), t.permit2.rejectsLate),
         ],
         mechanics: [fill(t.permit2.batch, labels), t.permit2.owner, ...matched(t.domain.permit2)],
       };
@@ -270,7 +296,7 @@ function explained(parsed, known, say) {
           fill(t.permit2.transferRecipient, spender),
           address(t.label.token, member('token', permitted)),
           largestWithoutSource(amountEntry(member('amount', permitted), true, say)),
-          signatureDeadline(member('deadline')),
+          signatureDeadline(member('deadline'), t.permit2.rejectsLate),
         ],
         mechanics: [fill(t.permit2.transfer, spender), ...matched(t.domain.permit2)],
       };
@@ -303,7 +329,7 @@ function expirationEntry(field, say, notable) {
   const { t } = say;
   if (readTime(field, say.now)?.zero) return { label: t.permit2.expiration, value: String(field.value), notes: [t.permit2.expirationZero] };
   const read = timeEntry(t.permit2.expiration, field, say);
-  if (read.passed && notable) notable.push(t.permit2.expirationPassed);
+  if (read.passed && notable) notable.push({ text: t.permit2.expirationPassed });
   return read.entry;
 }
 
@@ -344,7 +370,7 @@ function itemEntry(fields, known, say) {
     }
     entry.sub.push(
       { label: t.seaport.amountStart, value: String(from.exact) },
-      { label: t.seaport.amountEnd, value: String(to.exact), notes },
+      { label: t.seaport.amountEnd, value: String(to.exact), notes, decimals: convert },
     );
   }
   const recipient = declared(fields, 'recipient');
@@ -356,18 +382,29 @@ function itemEntry(fields, known, say) {
 
 // An amount: the exact number on its own line, and under it everything we
 // say about that number, so that no statement about an amount is ever apart
-// from the amount. `largestNote` is what to say when the number is the
-// largest its field holds.
-function amountEntry(field, convert, { t, decimals }, largestNote = t.amount.largest) {
+// from the amount. `unlimited` is true where the protocol's source gives the
+// largest amount a meaning of its own (Permit2's allowances).
+//
+// Two marks on the entry are for the page and for the "not checked" list:
+// `decimals`, when the amount is converted and so the person can usefully
+// say how many decimals the token has, and `largest`, when it is not
+// converted at all. The second case says so in words: an input that changes
+// nothing with no reason given looks broken.
+function amountEntry(field, convert, { t, decimals }, unlimited = false) {
   const read = convert ? readAmount(field, decimals) : readCount(field);
   const label = convert ? t.amount.exact : t.amount.count;
   if (read === null) return { largest: false, entry: { label, value: asWritten(field), notes: [t.page.unreadNote] } };
 
-  const notes = [];
-  if (read.largest) notes.push(largestNote);
-  if (read.amount !== undefined) notes.push(fill(t.amount.stated, { decimals, amount: read.amount }));
-  if (read.assumed) notes.push(t.amount.decimalsUnknown, ...read.assumed.map((guess) => fill(t.amount.assumed, guess)));
-  return { largest: read.largest, entry: { label, value: String(read.exact), notes } };
+  const entry = { label, value: String(read.exact), notes: [] };
+  if (read.largest) {
+    entry.largest = true;
+    entry.notes.push(unlimited ? t.permit2.unlimited : t.amount.largest);
+    if (convert) entry.notes.push(unlimited ? t.permit2.unlimitedDecimals : t.amount.largestDecimals);
+  }
+  if (read.amount !== undefined) entry.notes.push(fill(t.amount.stated, { decimals, amount: read.amount }));
+  if (read.assumed) entry.notes.push(t.amount.decimalsUnknown, ...read.assumed.map((guess) => fill(t.amount.assumed, guess)));
+  if (read.amount !== undefined || read.assumed) entry.decimals = true;
+  return { largest: read.largest, entry };
 }
 
 // A time: the date and how far it is from now, or the number as written
@@ -377,7 +414,7 @@ function timeEntry(label, field, { t, now, locale, timeZone }) {
   if (read === null) return { passed: false, entry: { label, value: asWritten(field), notes: [t.page.unreadNote] } };
 
   const written = String(field.value);
-  if (read.zero) return { passed: true, entry: { label, value: written, notes: [t.time.zero, t.time.passed] } };
+  if (read.zero) return { passed: true, entry: { label, value: written, notes: [t.time.zero, t.time.passed], clock: true } };
   if (read.largest) return { passed: false, entry: { label, value: written, notes: [t.time.largest] } };
   if (read.date === null) return { passed: false, entry: { label, value: written, notes: [t.time.beyondDates] } };
 
@@ -391,6 +428,8 @@ function timeEntry(label, field, { t, now, locale, timeZone }) {
       label,
       value: `${fill(t.time.date, { date, zone: timeZone })} (${distance(Number(read.fromNow), locale)})`,
       notes: passed ? [t.time.passed] : [],
+      // The distance is counted from the device's clock.
+      clock: true,
     },
   };
 }

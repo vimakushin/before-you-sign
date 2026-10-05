@@ -6,23 +6,31 @@
 // thing to compare before signing is the wallet's own screen and not this
 // page, belong to the page.
 
-import { losesDigits, notRead, readInteger } from './values.js';
-
-// True of every request, whatever is in it: this project never asks the
-// network anything.
-const ALWAYS = [
-  'whose-addresses', // who is behind any address in the request
-  'token-genuine', // whether the token is the one its name suggests
-  'contract-code', // the code at the address: we say what a protocol's own source says, not what this contract does
-  'address-checksum', // the letter case of addresses, which ERC-55 uses as a checksum
-];
+import { isAddress, losesDigits, notRead, readInteger } from './values.js';
 
 const TIME_ROLES = ['signatureDeadline', 'allowanceExpiration', 'startTime', 'endTime'];
 
 // Takes the result of parseRequest (parsed: true) and of recognise.
 export function notChecked(parsed, known) {
   const fields = everyField([...parsed.domain, ...parsed.message]);
-  const list = [...ALWAYS];
+  const list = [];
+
+  // This project never asks the network anything, so these are true of every
+  // request that has the thing they speak of. A line about a token under a
+  // request that has no token in it is noise, and noise teaches a person to
+  // skip the list.
+  const addresses = fields.some((field) => field.type === 'address' || isAddress(field.value));
+  const contract = parsed.domain.some((field) => field.name === 'verifyingContract' && field.type === 'address');
+  // Who is behind any address in the request.
+  if (addresses) list.push('whose-addresses');
+  // Whether the token is the one the person expects. Only where the answer
+  // names a token: for a type we do not explain we do not know that there is one.
+  if (known?.roles?.token || known?.roles?.offer) list.push('token-genuine');
+  // The code at the contract's address: we say what a protocol's own source
+  // says, not what this contract does.
+  if (contract) list.push('contract-code');
+  // The letter case of addresses, which ERC-55 uses as a checksum.
+  if (addresses) list.push('address-checksum');
 
   // The type is not one we explain, or its shape is but the contract could
   // not be verified: either way the meaning of the members is not stated.

@@ -119,6 +119,12 @@ const ASSUMED_DECIMALS = [18, 6];
 // https://github.com/ethereum/ERCs/blob/365b4c02879f3e882b91281d42b4f57b406205e9/ERCS/erc-20.md
 const MOST_DECIMALS = 255;
 
+// Whether a value can be a token's number of decimals. The page uses the same
+// rule to tell the person that what they typed was not used.
+export function validDecimals(decimals) {
+  return Number.isInteger(decimals) && decimals >= 0 && decimals <= MOST_DECIMALS;
+}
+
 // Takes a field of the parse result and, if the person stated it, the number
 // of decimals. Anything that is not a whole number from 0 to 255 (an empty
 // input box, a typo) counts as not stated: the answer then carries guesses
@@ -131,7 +137,7 @@ export function readAmount(field, decimals) {
   if (read === null) return null;
 
   if (read.largest) return marks(read);
-  if (Number.isInteger(decimals) && decimals >= 0 && decimals <= MOST_DECIMALS) {
+  if (validDecimals(decimals)) {
     return { ...marks(read), amount: withDecimals(read.integer, decimals) };
   }
   return {

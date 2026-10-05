@@ -13,7 +13,13 @@ const read = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.ur
 const mail = read('eip712-example.json');
 const permitSingle = read('permit2-permit-single.json');
 
+// What is listed for a request the answer explains, and what is left of it
+// where the answer names no token, and where the request declares no
+// contract address either. A line about something the request does not have
+// is not listed.
 const ALWAYS = ['whose-addresses', 'token-genuine', 'contract-code', 'address-checksum'];
+const NO_TOKEN = ['whose-addresses', 'contract-code', 'address-checksum'];
+const NO_CONTRACT = ['whose-addresses', 'address-checksum'];
 
 function listFor(text) {
   const parsed = parseRequest(text);
@@ -34,13 +40,25 @@ test('every answer says what was not checked, whatever the request', () => {
     changed(permitSingle, (data) => delete data.types.EIP712Domain),
     changed(mail, (data) => (data.message = {})),
   ];
-  for (const request of requests) {
-    assert.deepEqual(listFor(request).slice(0, ALWAYS.length), ALWAYS);
-  }
+  for (const request of requests) assert.ok(listFor(request).length > 0);
+});
+
+test('nothing is listed about what the request does not have', () => {
+  // No token named by the answer, no line about a token.
+  assert.ok(!listFor(mail).includes('token-genuine'));
+  // No address anywhere in the request, no line about addresses.
+  const noAddresses = changed(mail, (data) => {
+    data.types.EIP712Domain = [{ name: 'name', type: 'string' }];
+    data.types.Person = [{ name: 'name', type: 'string' }];
+    data.domain = { name: 'Ether Mail' };
+    data.message.from = { name: 'Cow' };
+    data.message.to = { name: 'Bob' };
+  });
+  assert.deepEqual(listFor(noAddresses), ['meaning-of-fields']);
 });
 
 test('a type that is not explained adds that the meaning of its fields is not stated', () => {
-  assert.deepEqual(listFor(mail), [...ALWAYS, 'meaning-of-fields']);
+  assert.deepEqual(listFor(mail), [...NO_TOKEN, 'meaning-of-fields']);
 });
 
 const PERMIT2 = ['network-not-compared', 'prior-approval-of-permit2', 'token-decimals', 'device-clock'];
@@ -111,7 +129,7 @@ test('a Seaport order mentions decimals unless every item was read and none is a
 
 test('a type that is not explained still says when its domain type is not declared', () => {
   const text = changed(mail, (data) => delete data.types.EIP712Domain);
-  assert.deepEqual(listFor(text), [...ALWAYS, 'meaning-of-fields', 'contract-not-established']);
+  assert.deepEqual(listFor(text), [...NO_CONTRACT, 'meaning-of-fields', 'contract-not-established']);
 });
 
 test('answers for a request nested as deep as the parser accepts', () => {
@@ -119,7 +137,7 @@ test('answers for a request nested as deep as the parser accepts', () => {
     data.types.Mail = [{ name: 'to', type: 'Mail[]' }];
     data.message = 'MESSAGE';
   }).replace('"MESSAGE"', '{"to":['.repeat(700) + ']}'.repeat(700));
-  assert.deepEqual(listFor(nested), [...ALWAYS, 'meaning-of-fields']);
+  assert.deepEqual(listFor(nested), [...NO_TOKEN, 'meaning-of-fields']);
 });
 
 test('an ERC-2612 permit with a domain EIP-712 does not allow is not said to be off a list: there is no list', () => {
@@ -138,26 +156,27 @@ test('an ERC-2612 permit with a domain EIP-712 does not allow is not said to be 
     data.domain = { owner: '0x1111111111111111111111111111111111111111' };
     data.message = { owner: data.domain.owner, spender: data.domain.owner, value: '1', nonce: '0', deadline: '1' };
   });
-  assert.deepEqual(listFor(text), [...ALWAYS, 'meaning-of-fields', 'contract-not-established']);
+  assert.deepEqual(listFor(text), [...NO_CONTRACT, 'meaning-of-fields', 'contract-not-established']);
 });
 
 test('a contract that could not be verified is said so, and its fields are not explained', () => {
-  const expected = [...ALWAYS, 'meaning-of-fields', 'contract-not-established'];
+  const rest = ['meaning-of-fields', 'contract-not-established'];
   // Compared with a list and not found on it: the list is not complete.
   assert.deepEqual(listFor(changed(permitSingle, (data) => (data.domain.name = 'Other'))), [
-    ...expected,
+    ...NO_TOKEN,
+    ...rest,
     'published-lists-incomplete',
   ]);
   // Nothing to compare: the request declares no domain type.
-  assert.deepEqual(listFor(changed(permitSingle, (data) => delete data.types.EIP712Domain)), expected);
+  assert.deepEqual(listFor(changed(permitSingle, (data) => delete data.types.EIP712Domain)), [...NO_CONTRACT, ...rest]);
 });
 
 test('keys outside the type, values that could not be read, and large bare numbers are each listed', () => {
   const undeclared = changed(mail, (data) => (data.message.to.cc = 'Eve'));
-  assert.deepEqual(listFor(undeclared), [...ALWAYS, 'meaning-of-fields', 'undeclared-keys']);
+  assert.deepEqual(listFor(undeclared), [...NO_TOKEN, 'meaning-of-fields', 'undeclared-keys']);
 
   const unread = changed(mail, (data) => delete data.message.contents);
-  assert.deepEqual(listFor(unread), [...ALWAYS, 'meaning-of-fields', 'unread-values']);
+  assert.deepEqual(listFor(unread), [...NO_TOKEN, 'meaning-of-fields', 'unread-values']);
 
   // A deadline written as a bare number too large for JavaScript to hold exactly.
   const bare = permitSingle.replace('"sigDeadline": "1790072010"', '"sigDeadline": 9007199254740993');

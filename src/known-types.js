@@ -127,7 +127,8 @@ const KNOWN = [
     // Two separate quotes from "Specification": "a call to permit(owner,
     // spender, value, deadline, v, r, s) will set allowance[owner][spender] to
     // value", and among the conditions for that, "The current blocktime is
-    // less than or equal to deadline". So the deadline limits when the
+    // less than or equal to deadline", followed by "If any of these conditions
+    // are not met, the permit call must revert" (read 2026-10-05). So the deadline limits when the
     // signature can be used; the standard gives the allowance itself no
     // expiry. The token is not in the message: the standard puts it in the
     // domain, as "verifyingContract": tokenAddress.
@@ -147,7 +148,7 @@ const KNOWN = [
     // and an allowance of that size is not reduced by spending (transferFrom
     // subtracts only when `allowance[src][msg.sender] != uint(-1)`).
     // `expiry` limits when the signature can be used, with zero switching
-    // the check off: `require(expiry == 0 || now <= expiry)`. The domain is
+    // the check off: `require(expiry == 0 || now <= expiry, "Dai/permit-expired")`. The domain is
     // built with `address(this)`, so here too the token is verifyingContract.
     // The file says of itself that it "was altered compared to the production
     // version" (it no longer uses LibNote); the type string and the permit
@@ -210,7 +211,9 @@ const KNOWN = [
   },
   {
     // The same as PermitSingle with a list of tokens and one spender for all.
-    // Same sources.
+    // Same sources. The deadline is checked the same way: AllowanceTransfer.sol
+    // has `if (block.timestamp > permitBatch.sigDeadline) revert
+    // SignatureExpired(permitBatch.sigDeadline);` (read 2026-10-05).
     domains: PERMIT2,
     // Nothing in the sources read speaks of the batch separately; its members
     // are explained by what is quoted for the single permit above.
@@ -238,7 +241,9 @@ const KNOWN = [
     // The signature works once. README.md: "permissions to the spender only
     // last for the duration of the transaction that the one-time signature is
     // spent"; SignatureTransfer.sol marks the nonce as used and reverts with
-    // InvalidNonce on a second attempt.
+    // InvalidNonce on a second attempt. It also has `if (block.timestamp >
+    // permit.deadline) revert SignatureExpired(permit.deadline);` (read
+    // 2026-10-05).
     //
     // Who receives the tokens is not in the signed message. PermitHash.sol
     // hashes the token, the amount, the spender, the nonce and the deadline;

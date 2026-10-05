@@ -29,19 +29,26 @@
     </header>
 
     <main>
-      <!-- Next to the box, not at the foot of the page: it has to be read
-           before anything is pasted. -->
-      <p id="keys"></p>
       <label for="request" id="request-label"></label>
       <textarea id="request" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <!-- A long request scrolls out of sight inside the box. This line says
+           that the text is there. -->
+      <p id="pasted"></p>
+      <!-- At the box, not at the foot of the page, and small enough that the
+           box is the first thing seen. -->
+      <p id="keys"></p>
 
       <!-- The answer comes straight after the box, so that it is on screen
-           without scrolling even on a small phone. The decimals field is
-           below it: it only matters once there is an amount to convert. -->
+           without scrolling even on a small phone. -->
       <section id="answer" aria-live="polite"></section>
 
-      <label for="decimals" id="decimals-label"></label>
-      <input id="decimals" type="number" min="0" max="255" step="1" inputmode="numeric" autocomplete="off" />
+      <!-- Hidden until an answer has an amount to convert; the page then puts
+           this field right under that amount, where the question arises. -->
+      <div id="decimals-field" hidden>
+        <label for="decimals" id="decimals-label"></label>
+        <input id="decimals" type="number" min="0" max="255" step="1" inputmode="numeric" autocomplete="off" />
+        <p id="decimals-note"></p>
+      </div>
     </main>
 
     <footer>

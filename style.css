@@ -74,6 +74,13 @@ label {
   font-weight: 600;
 }
 
+/* Fonts already on the device, named one by one. The bare word "monospace"
+   lets the browser choose by the language of the page, and for Russian it
+   chose a typewriter face with serifs. */
+:root {
+  --mono: Consolas, Menlo, 'DejaVu Sans Mono', 'Liberation Mono', ui-monospace, monospace;
+}
+
 textarea,
 input {
   display: block;
@@ -82,7 +89,7 @@ input {
   padding: 0.5rem;
   /* Not smaller than 1rem: a phone zooms the whole page in when a field with
      smaller type is tapped. */
-  font: 1rem/1.4 ui-monospace, monospace;
+  font: 1rem/1.4 var(--mono);
   color: inherit;
   background: transparent;
   border: 1px solid var(--rule);
@@ -98,11 +105,22 @@ h3 {
   font-size: 1rem;
 }
 
+#pasted,
+#keys,
+#decimals-note {
+  margin: 0.25rem 0 0;
+  color: var(--quiet);
+  font-size: 0.9rem;
+}
+
 #keys {
-  margin-top: 1rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--rule);
-  border-radius: 4px;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--rule);
+}
+
+#decimals-field label {
+  margin-top: 0.5rem;
+  font-weight: 400;
 }
 
 /* The answer to "what am I being asked to sign": one sentence, first and
@@ -122,6 +140,19 @@ h3 {
   margin: 0.5rem 0;
   padding: 0.5rem 0.75rem;
   border: 2px solid var(--ink);
+}
+
+.notable p {
+  margin: 0.25rem 0;
+}
+
+.fact {
+  font-weight: 600;
+}
+
+/* The one thing the page asks a person to do. */
+.wallet {
+  margin: 0.75rem 0;
   font-weight: 600;
 }
 
@@ -141,7 +172,17 @@ h3 {
 }
 
 .value {
-  font: 1rem/1.4 ui-monospace, monospace;
+  font: 1rem/1.4 var(--mono);
+}
+
+/* An address in groups of four, in two halves that stay whole. */
+.half {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.group {
+  margin-right: 0.3em;
 }
 
 .sub {
@@ -160,7 +201,7 @@ li {
 }
 
 .written {
-  font: 0.85rem/1.4 ui-monospace, monospace;
+  font: 0.85rem/1.4 var(--mono);
 }
 
 .flag {

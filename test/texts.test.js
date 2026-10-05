@@ -57,7 +57,6 @@ test('every code the code can produce has a text', () => {
   const expected = {
     refusal: [...all(parse, /refuse\('([a-z-]+)'/g), ...all(parse, /return '([a-z-]+)'/g), 'truncated'],
     notChecked: [
-      ...listed(unknowns, /const ALWAYS = \[([^\]]*)\]/g),
       ...all(unknowns, /list\.push\('([a-z0-9-]+)'\)/g),
       ...listed(known, /unchecked: \[([^\]]*)\]/g),
     ],
