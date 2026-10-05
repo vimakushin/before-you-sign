@@ -95,14 +95,19 @@ function refusal({ refused }) {
   return refused.map((line, index) => element('p', line, index === 0 ? 'main' : undefined));
 }
 
-function explanation({ headline, body, notChecked, domain, message }, { page }) {
+// Top to bottom, in the order a person needs it: the one sentence that says
+// what the signature gives, what must not be missed, the details, how the
+// request works, what was not checked, and last the request as written.
+function explanation({ main, notable, details, mechanics, notChecked, domain, message }, { page }) {
   const list = element('ul');
   list.append(...notChecked.map((line) => element('li', line)));
   return [
-    element('h2', page.answerTitle),
-    ...headline.map((line) => element('p', line, 'main')),
+    element('p', main, 'main'),
+    ...notable.map((line) => element('p', line, 'notable')),
+    element('h2', page.detailsTitle),
+    ...details.map(entry),
     element('p', page.wallet),
-    ...body.flatMap(lineOrGroup),
+    ...(mechanics.length > 0 ? [element('h2', page.mechanicsTitle), ...mechanics.map(entry)] : []),
     element('h2', page.notCheckedTitle),
     list,
     element('h2', page.contentsTitle),
@@ -111,11 +116,21 @@ function explanation({ headline, body, notChecked, domain, message }, { page }) 
   ];
 }
 
-function lineOrGroup(entry) {
-  if (typeof entry === 'string') return [element('p', entry)];
-  const list = element('ul');
-  list.append(...entry.lines.map((line) => element('li', line)));
-  return [element('p', entry.title, 'group-title'), list];
+// One entry of the details: a sentence, a heading, or a value from the
+// request on a line of its own under a label that says what it is.
+function entry(item) {
+  if (typeof item === 'string') return element('p', item);
+  if (item.heading) return element('h3', item.heading);
+  const block = element('div', undefined, 'detail');
+  block.append(element('p', item.label, 'label'));
+  if (item.value !== undefined) block.append(element('p', item.value, 'value'));
+  block.append(...(item.notes ?? []).map((note) => element('p', note)));
+  if (item.sub?.length > 0) {
+    const sub = element('div', undefined, 'sub');
+    sub.append(...item.sub.map(entry));
+    block.append(sub);
+  }
+  return block;
 }
 
 // The request as it is written: every field, its declared type, its value.

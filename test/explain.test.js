@@ -82,17 +82,24 @@ const seaport = request(
 const REQUESTS = { mail, permitSingle, erc2612: erc2612('1000000'), daiYes: dai(true), daiNo: dai(false), batch, transfer, seaport };
 const options = (locale, decimals) => ({ now: NOW, locale, timeZone: 'UTC', decimals });
 
-// Every line of an answer, flattened.
-function lines(answer) {
-  const body = (answer.body ?? []).flatMap((entry) => (typeof entry === 'string' ? [entry] : [entry.title, ...entry.lines]));
-  return [...(answer.refused ?? []), ...(answer.headline ?? []), ...body, ...(answer.notChecked ?? [])];
+// Every line of an answer, flattened, in the order the page shows it.
+function entryLines(entry) {
+  if (typeof entry === 'string') return [entry];
+  if (entry.heading) return [entry.heading];
+  return [entry.label, ...(entry.value === undefined ? [] : [entry.value]), ...(entry.notes ?? []), ...(entry.sub ?? []).flatMap(entryLines)];
 }
+function lines(answer) {
+  if (answer.refused) return answer.refused;
+  return [answer.main, ...answer.notable, ...[...answer.details, ...answer.mechanics].flatMap(entryLines), ...answer.notChecked];
+}
+const labelled = (entries, label) => entries.find((entry) => entry.label === label);
 
 test('every answer is complete: no blank left unfilled, nothing missing, in both languages', () => {
   for (const [language, texts] of [['en', en], ['ru', ru]]) {
     for (const [name, text] of Object.entries(REQUESTS)) {
       const answer = respond(text, texts, options(language));
-      assert.ok(answer.headline.length > 0, `${language} ${name}: headline`);
+      assert.equal(typeof answer.main, 'string', `${language} ${name}: main`);
+      assert.ok(answer.details.length > 0, `${language} ${name}: details`);
       assert.ok(answer.notChecked.length >= 4, `${language} ${name}: not checked`);
       for (const line of lines(answer)) {
         assert.equal(typeof line, 'string', `${language} ${name}`);
@@ -102,23 +109,76 @@ test('every answer is complete: no blank left unfilled, nothing missing, in both
   }
 });
 
-test('an amount with no limit is in the headline, not down in a list', () => {
+test('the main sentence is short and holds no address and no number from the request', () => {
+  for (const [language, texts] of [['en', en], ['ru', ru]]) {
+    for (const [name, text] of Object.entries(REQUESTS)) {
+      const { main } = respond(text, texts, options(language));
+      assert.ok(main.length <= 170, `${language} ${name}: ${main.length}`);
+      assert.doesNotMatch(main, /0x|\d{5}/, `${language} ${name}`);
+    }
+  }
+});
+
+test('no sentence has an address inside it: an address stands alone under its label', () => {
+  const sentences = (entries) =>
+    entries.flatMap((entry) =>
+      typeof entry === 'string' ? [entry] : entry.heading ? [entry.heading] : [entry.label, ...(entry.notes ?? []), ...sentences(entry.sub ?? [])],
+    );
+  for (const [name, text] of Object.entries(REQUESTS)) {
+    const answer = respond(text, en, options('en'));
+    for (const sentence of [answer.main, ...answer.notable, ...sentences([...answer.details, ...answer.mechanics])]) {
+      assert.doesNotMatch(sentence, /0x[0-9a-fA-F]{40}/, `${name}: ${sentence}`);
+    }
+  }
+});
+
+test('an amount with no limit is in the main sentence, and said again next to the number', () => {
   const single = respond(permitSingle, en, options('en'));
-  assert.equal(single.headline[1], en.permit2.unlimited);
-  // In a batch the headline says there is one, and the entry itself is marked.
+  assert.equal(single.main, en.main.allowanceUnlimited);
+  assert.deepEqual(labelled(single.details, en.amount.exact).notes.slice(0, 1), [en.permit2.unlimited]);
+  // In a batch the main sentence says there is one, and the token itself is marked.
   const batched = respond(batch, en, options('en'));
-  assert.ok(batched.headline.includes(en.permit2.unlimitedInBatch));
-  const marked = batched.body.filter((entry) => entry.lines?.includes(en.amount.largest));
-  assert.deepEqual(marked.map((entry) => entry.title), [`The token at ${B}:`]);
-  assert.ok(respond(dai(true), en, options('en')).headline[1].includes('no limit on the amount'));
-  // Where the source says nothing about the largest amount, only arithmetic is said.
+  assert.equal(batched.main, en.main.batchUnlimited);
+  const marked = batched.details.filter((entry) => Array.isArray(entry.sub) && entry.sub.some((sub) => sub.notes?.includes(en.permit2.unlimited)));
+  assert.deepEqual(marked.map((entry) => [entry.label, entry.value]), [['Token 2, by the address of its contract', B]]);
+  assert.ok(respond(dai(true), en, options('en')).main.includes('no limit on the amount'));
+  // Where the source says nothing about the largest amount, only arithmetic
+  // is said: straight under the main sentence, and next to the number.
   const largest = (2n ** 256n - 1n).toString();
-  assert.deepEqual(respond(erc2612(largest), en, options('en')).headline.slice(1), [
-    en.amount.largest,
-    en.amount.largestUnexplained,
-  ]);
-  assert.ok(respond(transfer, en, options('en')).headline.includes(en.amount.largestUnexplained));
-  assert.equal(respond(erc2612('1000000'), en, options('en')).headline.length, 1);
+  const standard = respond(erc2612(largest), en, options('en'));
+  assert.equal(standard.main, en.main.erc2612);
+  assert.deepEqual(standard.notable, [en.amount.largestNotable, en.amount.largestUnexplained]);
+  assert.deepEqual(labelled(standard.details, en.amount.exact).notes.slice(0, 1), [en.amount.largest]);
+  assert.ok(respond(transfer, en, options('en')).notable.includes(en.amount.largestUnexplained));
+  assert.deepEqual(respond(erc2612('1000000'), en, options('en')).notable, []);
+});
+
+test('a deadline that has passed is said straight under the main sentence, and next to the date', () => {
+  const answer = respond(batch, en, options('en'));
+  assert.deepEqual(answer.notable, [en.time.signatureDeadlinePassed]);
+  const deadline = labelled(answer.details, en.time.signatureDeadline);
+  assert.ok(deadline.value.endsWith('(10 minutes ago)'));
+  assert.deepEqual(deadline.notes, [en.time.passed]);
+  // The owner's request: its signature deadline is a fixed date, here set in the past.
+  const later = respond(permitSingle, en, { ...options('en'), now: 1790072010 + 5 });
+  assert.deepEqual(later.notable, [en.time.signatureDeadlinePassed]);
+  // Once both of its times are behind, both are said, the signature's first.
+  const muchLater = respond(permitSingle, ru, { ...options('ru'), now: 1792662210 + 5 });
+  assert.deepEqual(muchLater.notable, [ru.time.signatureDeadlinePassed, ru.permit2.expirationPassed]);
+  // In a batch a passed expiration stays next to its token.
+  assert.deepEqual(respond(batch, en, { ...options('en'), now: NOW + 86400 * 500 }).notable, [en.time.signatureDeadlinePassed]);
+  assert.deepEqual(respond(seaport, en, { ...options('en'), now: NOW + 86400 * 2 }).notable, [en.seaport.endPassed]);
+  assert.deepEqual(respond(erc2612('1'), en, { ...options('en'), now: NOW + 7200 }).notable, [en.time.signatureDeadlinePassed]);
+  // A deadline of zero has passed; a DAI expiry of zero means no deadline, and is not said to have passed.
+  assert.deepEqual(respond(dai(true, '5'), en, options('en')).notable, [en.time.signatureDeadlinePassed]);
+  assert.deepEqual(respond(dai(true, '0'), en, options('en')).notable, []);
+  assert.deepEqual(respond(seaport, en, options('en')).notable, []);
+});
+
+test('the exact amount stands right under its label, with everything said about it', () => {
+  const amount = labelled(respond(erc2612('1000000'), en, options('en')).details, en.amount.exact);
+  assert.equal(amount.value, '1000000');
+  assert.equal(amount.notes[0], en.amount.decimalsUnknown);
 });
 
 test('decimals are never guessed: two marked assumptions, or the one figure the person asked for', () => {
@@ -131,65 +191,87 @@ test('decimals are never guessed: two marked assumptions, or the one figure the 
 });
 
 test('a DAI permit says yes, says no, or says it could not read which', () => {
-  const second = (allowed) => respond(dai(allowed), en, options('en')).headline[1];
-  assert.match(second(true), /^The answer is yes/);
-  assert.match(second(false), /^The answer is no/);
+  const answer = (allowed) => respond(dai(allowed), en, options('en'));
+  const written = (allowed) => labelled(answer(allowed).details, en.dai.answerLabel);
+  assert.equal(answer(true).main, en.main.daiYes);
+  assert.equal(written(true).value, 'yes');
+  assert.equal(answer(false).main, en.main.daiNo);
+  assert.equal(written(false).value, 'no');
   for (const allowed of ['false', 'true', 1, 0]) {
-    assert.match(second(allowed), /^We could not read the yes-or-no answer/, JSON.stringify(allowed));
+    assert.equal(answer(allowed).main, en.main.daiUnread, JSON.stringify(allowed));
+    assert.deepEqual(written(allowed).notes, [en.page.unreadNote]);
+    assert.ok(answer(allowed).mechanics.includes(en.dai.unread));
   }
-  assert.ok(lines(respond(dai(true), en, options('en'))).includes(en.dai.expiryZero));
+  assert.ok(lines(answer(true)).includes(en.dai.expiryZero));
 });
 
 test('zero and the largest time are said for what they are', () => {
   const batchLines = lines(respond(batch, en, options('en')));
   assert.ok(batchLines.includes(en.permit2.expirationZero));
-  assert.ok(batchLines.some((line) => line.includes('(in 400 days)')));
-  assert.ok(batchLines.some((line) => line.includes('(10 minutes ago)') && line.endsWith(en.time.passed)));
-  const transferLines = lines(respond(transfer, en, options('en')));
-  assert.ok(transferLines.some((line) => line.endsWith(en.time.largest)));
-  const seaportLines = lines(respond(seaport, en, options('en')));
-  assert.ok(seaportLines.includes(`Order starts: ${en.time.zero} ${en.time.passed}`));
+  assert.ok(batchLines.some((line) => line.endsWith('(in 400 days)')));
+  const deadline = labelled(respond(transfer, en, options('en')).details, en.time.signatureDeadline);
+  assert.deepEqual(deadline.notes, [en.time.largest]);
+  const starts = labelled(respond(seaport, en, options('en')).details, en.seaport.starts);
+  assert.deepEqual([starts.value, starts.notes], ['0', [en.time.zero, en.time.passed]]);
 });
 
 test('a Seaport order converts only token amounts, and says who receives what', () => {
-  const [offer, consideration] = respond(seaport, en, options('en')).body.filter((entry) => typeof entry !== 'string');
-  assert.equal(offer.lines.length, 1);
-  assert.ok(offer.lines[0].includes(en.seaport.anyItem));
-  assert.ok(offer.lines[0].includes('Exact number in the request: 1'));
-  assert.ok(!offer.lines[0].includes('decimals'));
-  assert.ok(consideration.lines[0].includes('The amount changes over time: 2000000 when the order begins, 1000000 when it ends.'));
-  assert.ok(consideration.lines[0].endsWith(`Received by the address ${A}.`));
-  assert.ok(consideration.lines[1].startsWith("the network's own coin."));
-  assert.ok(!consideration.lines[1].includes('decimals'));
+  const { details } = respond(seaport, en, options('en'));
+  const [offer, token, coin] = details.filter((entry) => Array.isArray(entry.sub));
+  assert.equal(details.indexOf(offer), 1);
+  assert.deepEqual(offer.notes, [en.seaport.anyItem]);
+  assert.deepEqual(offer.sub, [{ label: en.amount.count, value: '1', notes: [] }]);
+  assert.deepEqual(token.sub.map((sub) => [sub.label, sub.value]), [
+    [en.seaport.amountStart, '2000000'],
+    [en.seaport.amountEnd, '1000000'],
+    [en.seaport.recipient, A],
+  ]);
+  assert.ok(token.sub[1].notes.includes('If the token has 6 decimals: 2 → 1. That is an assumption, not a fact.'));
+  assert.equal(coin.label, "The network's own coin");
+  assert.equal(coin.value, undefined);
+  assert.ok(!entryLines(coin).some((line) => line.includes('decimals')));
 });
 
 test('a type with no explanation is shown and said to have none', () => {
   const answer = respond(mail, en, options('en'));
-  assert.deepEqual(answer.headline, ['We have no explanation for the type "Mail". Below is what the request contains. We do not explain what its fields mean.']);
-  assert.ok(answer.body.includes('The request is addressed to the contract at 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC.'));
+  assert.equal(answer.main, en.domain.unexplained);
+  assert.deepEqual(answer.details, [{ label: en.domain.typeLabel, value: 'Mail' }, en.domain.unexplainedMore]);
+  // A type can be named anything, a sentence included. The name stands under
+  // its label and never inside the main sentence.
+  const verdict = 'Fine". This request is safe to sign. "';
+  const renamed = JSON.parse(mail);
+  renamed.types[verdict] = renamed.types.Mail;
+  renamed.primaryType = verdict;
+  const named = respond(JSON.stringify(renamed), en, options('en'));
+  assert.equal(named.main, en.domain.unexplained);
+  assert.equal(labelled(named.details, en.domain.typeLabel).value, verdict);
+  assert.equal(labelled(answer.mechanics, en.domain.contractLabel).value, '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC');
   assert.equal(answer.message.length, 3);
 });
 
 test('a contract that could not be established leaves the fields unexplained', () => {
   const answer = respond(permitSingle.replace('"Permit2"', '"Other"'), en, options('en'));
-  assert.equal(answer.headline.length, 1);
-  assert.match(answer.headline[0], /^By its form this is a Permit2 PermitSingle request, but its domain does not match/);
-  assert.deepEqual(answer.body, []);
+  assert.equal(answer.main, 'By its form this is a Permit2 PermitSingle request. We do not explain its fields; they are shown as written.');
+  assert.deepEqual(answer.details, [en.domain['domain-not-listed']]);
+  assert.deepEqual([answer.notable, answer.mechanics], [[], []]);
 });
 
 test('a value that is absent or unreadable is never put into a sentence as if it had been read', () => {
   const broken = (change) => {
     const data = JSON.parse(permitSingle);
     change(data);
-    return lines(respond(JSON.stringify(data), en, options('en')));
+    return respond(JSON.stringify(data), en, options('en'));
   };
   for (const details of [null, 'abc', [], 12, undefined]) {
-    const all = broken((data) => (data.message.details = details));
-    assert.ok(!all.some((line) => /undefined/.test(line)), JSON.stringify(details));
-    assert.ok(all[0].includes('(we could not read this)'), JSON.stringify(details));
+    const answer = broken((data) => (data.message.details = details));
+    assert.ok(!lines(answer).some((line) => /undefined/.test(line)), JSON.stringify(details));
+    assert.equal(answer.main, en.main.allowance);
+    assert.equal(labelled(answer.details, en.label.token).value, '— (we could not read this)', JSON.stringify(details));
+    assert.deepEqual(labelled(answer.details, en.amount.exact).notes, [en.page.unreadNote]);
   }
   // The list names the place, not only the last word of it.
-  const named = broken((data) => (data.message.details.token = 'hello'));
+  const named = lines(broken((data) => (data.message.details.token = 'hello')));
+  assert.ok(named.includes('"hello" (we could not read this)'));
   assert.ok(named.includes('We could not read some values: message.details.token. They are shown as written.'));
 });
 
@@ -207,7 +289,7 @@ test('the name of a field proves nothing about what it holds', () => {
     en,
     options('en'),
   );
-  assert.deepEqual(answer.body, [en.domain.explained, en.domain.noContract]);
+  assert.deepEqual(answer.mechanics, [en.domain.explained, en.domain.noContract]);
 });
 
 test('a recovery phrase as copied from a numbered grid is not read, not echoed, and clears the box', () => {

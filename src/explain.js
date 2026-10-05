@@ -4,12 +4,23 @@
 // be tested without a browser.
 //
 // The answer is { refused, clear } when the text could not be read, and
-// otherwise { headline, body, notChecked, domain, message }:
-//   headline    what the request says, first of all the thing that matters
-//               most (an amount with no limit goes here, not into a list);
-//   body        the rest, as lines and as titled groups of lines;
+// otherwise, in the order the page shows it:
+//   main        one short sentence: what this signature gives. No address and
+//               no number in it, so that it can be read at a glance;
+//   notable     what must not be missed, straight under the main sentence: a
+//               deadline that has already passed, an amount that is the
+//               largest its field holds;
+//   details     who, which token, how much, until when;
+//   mechanics   how the request works: its domain, and what a matching
+//               domain does and does not tell;
 //   notChecked  what this answer has not checked, never empty;
 //   domain, message  the fields as parsed, for showing the request as written.
+//
+// `details` and `mechanics` are lists of entries. An entry is a sentence, or
+// { heading }, or { label, value, notes, sub }: a value from the request on a
+// line of its own, with a label saying what it is. An address is forty
+// characters with no spaces, and nobody reads one in the middle of a
+// sentence, so no sentence here has an address or an amount inside it.
 
 import { parseRequest } from './parse.js';
 import { recognise } from './known-types.js';
@@ -26,10 +37,8 @@ export function respond(pasted, texts, { now, decimals, locale, timeZone }) {
 
   const known = recognise(parsed);
   const say = { t: texts, now, decimals, locale, timeZone };
-  const { headline, body } = known?.roles ? explained(parsed, known, say) : shownOnly(parsed, known, say);
   return {
-    headline,
-    body,
+    ...(known?.roles ? explained(parsed, known, say) : shownOnly(parsed, known, say)),
     notChecked: notChecked(parsed, known).map((code) => fill(texts.notChecked[code], blanksFor(code, parsed))),
     domain: parsed.domain,
     message: parsed.message,
@@ -86,12 +95,18 @@ function declared(fields, name) {
   return fields.find((field) => field.name === name && !field.undeclared);
 }
 
-// A value for a sentence. One that is absent or that we could not read is
-// never put into a sentence as if it had been read: it is shown as written,
-// marked.
+// A value exactly as the request has it, for the cases where we could not
+// read it. Strings keep their quotes, so that "true" and true stay apart.
+function asWritten(field) {
+  return field?.value === undefined ? '—' : JSON.stringify(field.value);
+}
+
+// A value we expect to be readable, such as an address. One that is absent
+// or that we could not read is never shown as if it had been read: it is
+// shown as written, marked.
 function shown(field, t) {
   if (field?.value !== undefined && !notRead(field)) return field.value;
-  return `${field?.value === undefined ? '—' : JSON.stringify(field.value)} (${t.page.flagUnread})`;
+  return `${asWritten(field)} (${t.page.flagUnread})`;
 }
 
 // ---------------------------------------------------------------- no roles
@@ -100,19 +115,29 @@ function shown(field, t) {
 // what can be said without the roles.
 function shownOnly(parsed, known, say) {
   const { t } = say;
-  if (known) return { headline: [fill(t.domain[known.unverified], { form: t.form[known.kind] })], body: [] };
+  if (known) {
+    return { main: fill(t.domain.formOnly, { form: t.form[known.kind] }), notable: [], details: [t.domain[known.unverified]], mechanics: [] };
+  }
 
-  const body = [];
+  const mechanics = [];
   if (Object.hasOwn(parsed.types, 'EIP712Domain')) {
     // The name of a member proves nothing about what it holds: only a member
     // declared as an address and written as one is called the contract.
     const contract = declared(parsed.domain, 'verifyingContract');
     const readable = contract?.type === 'address' && !notRead(contract);
-    body.push(t.domain.explained);
-    body.push(readable ? fill(t.domain.contract, { address: contract.value }) : t.domain.noContract);
-    body.push(...network(parsed, say));
+    mechanics.push(t.domain.explained);
+    mechanics.push(readable ? { label: t.domain.contractLabel, value: contract.value } : t.domain.noContract);
+    mechanics.push(...network(parsed, say));
   }
-  return { headline: [fill(t.domain.unexplained, { type: parsed.primaryType })], body };
+  // The name of the type is whatever the request says it is, a whole sentence
+  // included. It goes under a label like any other value, never into the
+  // largest line of the page.
+  return {
+    main: t.domain.unexplained,
+    notable: [],
+    details: [{ label: t.domain.typeLabel, value: parsed.primaryType }, t.domain.unexplainedMore],
+    mechanics,
+  };
 }
 
 function network(parsed, { t }) {
@@ -124,125 +149,177 @@ function network(parsed, { t }) {
 
 // ------------------------------------------------------------------- roles
 
-// The order of the body is the same for every type: the amount first, since
-// the headline speaks of "the amount below"; then where the request is
-// addressed; then the times, the signature's before the allowance's, as the
-// sentence that introduces them names them.
 function explained(parsed, known, say) {
   const { t } = say;
   const { message, domain } = parsed;
   const member = (name, fields = message) => declared(fields, name) ?? {};
-  const address = declared(domain, 'verifyingContract')?.value;
-  const spender = shown(member('spender'), t);
-  const headline = [];
-  const body = [];
-  const matched = (text, blanks) =>
-    body.push(t.domain.explained, fill(text, { address, ...blanks }), ...network(parsed, say));
+  const address = (label, field) => ({ label, value: shown(field, t) });
+  const contract = declared(domain, 'verifyingContract')?.value;
+  // A domain that matched has words of its own: what matched, and what that
+  // does not mean. Saying nothing here would read as "all is well".
+  const matched = (text, blanks) => [
+    t.domain.explained,
+    fill(text, blanks),
+    { label: t.domain.contractLabel, value: contract },
+    ...network(parsed, say),
+  ];
+  // The sentences about how the request works point at an address by the
+  // label it stands under, not by its place in the list.
+  const labels = { spender: t.label.spender, holder: t.label.holder };
+  const notable = [];
+  // A time that ends something. When it has passed, that is said at the top
+  // as well as next to the date.
+  const ending = (label, field, passedText) => {
+    const read = timeEntry(label, field, say);
+    if (read.passed) notable.push(passedText);
+    return read.entry;
+  };
+  const signatureDeadline = (field) => ending(t.time.signatureDeadline, field, t.time.signatureDeadlinePassed);
+  // Where the protocol's source says nothing about the largest amount, only
+  // the arithmetic is said, and that we do not know what follows from it.
+  const largestWithoutSource = (amount) => {
+    if (amount.largest) notable.push(t.amount.largestNotable, t.amount.largestUnexplained);
+    return amount.entry;
+  };
 
   switch (known.kind) {
-    case 'erc2612-permit': {
-      headline.push(fill(t.erc2612.what, { spender, owner: shown(member('owner'), t) }));
-      const amount = amountLines(member('value'), true, say);
-      if (amount.largest) headline.push(t.amount.largest, t.amount.largestUnexplained);
-      body.push(...amount.lines);
-      body.push(known.roles.token ? fill(t.erc2612.token, { token: address }) : t.erc2612.tokenMissing);
-      body.push(...network(parsed, say));
-      body.push(fill(t.erc2612.deadline, { time: timeText(member('deadline'), say) }));
-      break;
-    }
+    case 'erc2612-permit':
+      return {
+        main: t.main.erc2612,
+        notable,
+        details: [
+          address(t.label.spender, member('spender')),
+          address(t.label.holder, member('owner')),
+          known.roles.token ? { label: t.erc2612.token, value: contract } : t.erc2612.tokenMissing,
+          largestWithoutSource(amountEntry(member('value'), true, say)),
+          signatureDeadline(member('deadline')),
+        ],
+        mechanics: [fill(t.erc2612.what, labels), ...network(parsed, say)],
+      };
     case 'dai-permit': {
       const allowed = member('allowed');
-      const who = { spender, holder: shown(member('holder'), t) };
-      headline.push(t.dai.what);
-      headline.push(
-        allowed.unread || typeof allowed.value !== 'boolean'
-          ? fill(t.dai.unread, { value: JSON.stringify(allowed.value) ?? '—' })
-          : fill(allowed.value ? t.dai.yes : t.dai.no, who),
-      );
-      matched(t.domain.dai);
+      const readable = !allowed.unread && typeof allowed.value === 'boolean';
       const expiry = member('expiry');
-      body.push(
-        readTime(expiry, say.now)?.zero ? t.dai.expiryZero : fill(t.dai.expiry, { time: timeText(expiry, say) }),
-      );
-      break;
+      return {
+        main: !readable ? t.main.daiUnread : allowed.value ? t.main.daiYes : t.main.daiNo,
+        notable,
+        details: [
+          address(t.label.spender, member('spender')),
+          address(t.label.holder, member('holder')),
+          readable
+            ? { label: t.dai.answerLabel, value: allowed.value ? t.dai.yesWord : t.dai.noWord }
+            : { label: t.dai.answerLabel, value: asWritten(allowed), notes: [t.page.unreadNote] },
+          readTime(expiry, say.now)?.zero
+            ? { label: t.time.signatureDeadline, value: String(expiry.value), notes: [t.dai.expiryZero] }
+            : signatureDeadline(expiry),
+        ],
+        mechanics: [t.dai.what, !readable ? t.dai.unread : fill(allowed.value ? t.dai.yes : t.dai.no, labels), ...matched(t.domain.dai)],
+      };
     }
     case 'permit2-permit-single': {
       const details = member('details').fields ?? [];
-      // The headline already says the amount is the largest and what Permit2
-      // calls that, so the line under the number does not say it again.
-      const amount = amountLines(member('amount', details), true, say, false);
-      headline.push(fill(t.permit2.single, { spender, token: shown(member('token', details), t) }));
-      if (amount.largest) headline.push(t.permit2.unlimited);
-      body.push(...amount.lines);
-      matched(t.domain.permit2);
-      body.push(t.permit2.owner, t.permit2.twoTimes);
-      body.push(fill(t.permit2.sigDeadline, { time: timeText(member('sigDeadline'), say) }));
-      body.push(expirationLine(member('expiration', details), say));
-      break;
+      const amount = amountEntry(member('amount', details), true, say, t.permit2.unlimited);
+      return {
+        main: amount.largest ? t.main.allowanceUnlimited : t.main.allowance,
+        notable,
+        details: [
+          address(t.label.spender, member('spender')),
+          address(t.label.token, member('token', details)),
+          amount.entry,
+          t.permit2.twoTimes,
+          signatureDeadline(member('sigDeadline')),
+          expirationEntry(member('expiration', details), say, notable),
+        ],
+        mechanics: [fill(t.permit2.single, labels), t.permit2.owner, ...matched(t.domain.permit2)],
+      };
     }
     case 'permit2-permit-batch': {
-      // Each entry says for itself whether its amount is the largest: with
-      // several tokens, the headline alone would not say which one it is.
-      const entries = (member('details').items ?? []).map((entry) => {
+      // Each token says for itself whether its amount is the largest: with
+      // several tokens, the main sentence alone would not say which one it is.
+      const tokens = (member('details').items ?? []).map((entry, index) => {
         const details = entry.fields ?? [];
-        const amount = amountLines(member('amount', details), true, say);
+        const amount = amountEntry(member('amount', details), true, say, t.permit2.unlimited);
         return {
           largest: amount.largest,
-          title: fill(t.permit2.batchToken, { token: shown(member('token', details), t) }),
-          lines: [...amount.lines, expirationLine(member('expiration', details), say)],
+          entry: {
+            ...address(fill(t.permit2.batchToken, { n: index + 1 }), member('token', details)),
+            sub: [amount.entry, expirationEntry(member('expiration', details), say)],
+          },
         };
       });
-      headline.push(fill(t.permit2.batch, { spender }));
-      if (entries.some((entry) => entry.largest)) headline.push(t.permit2.unlimitedInBatch);
-      body.push(...entries.map(({ title, lines }) => ({ title, lines })));
-      matched(t.domain.permit2);
-      body.push(t.permit2.owner, t.permit2.twoTimes);
-      body.push(fill(t.permit2.sigDeadline, { time: timeText(member('sigDeadline'), say) }));
-      break;
+      return {
+        main: tokens.some((token) => token.largest) ? t.main.batchUnlimited : t.main.batch,
+        notable,
+        details: [
+          address(t.label.spender, member('spender')),
+          ...tokens.map((token) => token.entry),
+          t.permit2.twoTimes,
+          signatureDeadline(member('sigDeadline')),
+        ],
+        mechanics: [fill(t.permit2.batch, labels), t.permit2.owner, ...matched(t.domain.permit2)],
+      };
     }
     case 'permit2-permit-transfer-from': {
       const permitted = member('permitted').fields ?? [];
-      const amount = amountLines(member('amount', permitted), true, say, false);
-      headline.push(fill(t.permit2.transfer, { spender, token: shown(member('token', permitted), t) }));
-      if (amount.largest) headline.push(t.amount.largest, t.amount.largestUnexplained);
-      headline.push(fill(t.permit2.transferRecipient, { spender }));
-      body.push(...amount.lines);
-      matched(t.domain.permit2);
-      body.push(fill(t.permit2.transferDeadline, { time: timeText(member('deadline'), say) }));
-      break;
+      const spender = { spender: t.label.transferSpender };
+      return {
+        main: t.main.transfer,
+        notable,
+        details: [
+          address(t.label.transferSpender, member('spender')),
+          fill(t.permit2.transferRecipient, spender),
+          address(t.label.token, member('token', permitted)),
+          largestWithoutSource(amountEntry(member('amount', permitted), true, say)),
+          signatureDeadline(member('deadline')),
+        ],
+        mechanics: [fill(t.permit2.transfer, spender), ...matched(t.domain.permit2)],
+      };
     }
     case 'seaport-order': {
-      const items = (name) => (member(name).items ?? []).map((item) => itemLine(item.fields ?? [], known, say));
-      headline.push(t.seaport.what);
-      body.push({ title: t.seaport.offer, lines: items('offer') }, t.seaport.offerRecipient);
-      body.push({ title: t.seaport.consideration, lines: items('consideration') }, t.seaport.extended);
-      matched(t.domain.seaport, { version: declared(domain, 'version')?.value });
-      body.push(fill(t.seaport.starts, { time: timeText(member('startTime'), say) }));
-      body.push(fill(t.seaport.ends, { time: timeText(member('endTime'), say) }));
-      break;
+      const items = (name) => (member(name).items ?? []).map((item) => itemEntry(item.fields ?? [], known, say));
+      return {
+        main: t.main.seaport,
+        notable,
+        details: [
+          { heading: t.seaport.offer },
+          ...items('offer'),
+          t.seaport.offerRecipient,
+          { heading: t.seaport.consideration },
+          ...items('consideration'),
+          t.seaport.extended,
+          timeEntry(t.seaport.starts, member('startTime'), say).entry,
+          ending(t.seaport.ends, member('endTime'), t.seaport.endPassed),
+        ],
+        mechanics: matched(t.domain.seaport, { version: declared(domain, 'version')?.value }),
+      };
     }
   }
-  return { headline, body };
 }
 
 // The expiration of a Permit2 allowance: zero has a meaning of its own there.
-function expirationLine(field, say) {
+// `notable` is given only where the request has one allowance; in a batch the
+// note stays next to its token.
+function expirationEntry(field, say, notable) {
   const { t } = say;
-  return readTime(field, say.now)?.zero
-    ? t.permit2.expirationZero
-    : fill(t.permit2.expiration, { time: timeText(field, say) });
+  if (readTime(field, say.now)?.zero) return { label: t.permit2.expiration, value: String(field.value), notes: [t.permit2.expirationZero] };
+  const read = timeEntry(t.permit2.expiration, field, say);
+  if (read.passed && notable) notable.push(t.permit2.expirationPassed);
+  return read.entry;
 }
 
-// One item of a Seaport order as a single line.
-function itemLine(fields, known, say) {
+// One item of a Seaport order: what it is, with its address, and under it
+// the ID, the amount and who receives it.
+function itemEntry(fields, known, say) {
   const { t } = say;
   const member = (name) => declared(fields, name) ?? {};
   const kind = known.itemKinds[Number(readInteger(member('itemType').value) ?? -1)];
-  if (!kind) return `itemType: ${shown({ ...member('itemType'), unread: true }, t)}`;
+  if (!kind) return { label: 'itemType', value: asWritten(member('itemType')), notes: [t.page.unreadNote] };
 
   const id = member('identifierOrCriteria');
-  const parts = [fill(t.seaport[kind], { token: shown(member('token'), t), id: shown(id, t) }) + '.'];
-  if (kind.endsWith('criteria') && readInteger(id.value) === 0n) parts.push(t.seaport.anyItem);
+  const entry = { label: t.seaport[kind], notes: [], sub: [] };
+  if (kind !== 'native') entry.value = shown(member('token'), t);
+  if (kind.endsWith('criteria') && readInteger(id.value) === 0n) entry.notes.push(t.seaport.anyItem);
+  if (kind === 'erc721' || kind === 'erc1155') entry.sub.push({ label: t.seaport.tokenId, value: shown(id, t) });
 
   // Only an ERC-20 amount is converted by decimals: see known-types.js.
   const convert = kind === 'erc20';
@@ -251,57 +328,71 @@ function itemLine(fields, known, say) {
   const end = member('endAmount');
   const [from, to] = [read(start), read(end)];
   if (from === null || to === null || from.exact === to.exact) {
-    parts.push(...amountLines(from === null ? start : end, convert, say).lines);
+    entry.sub.push(amountEntry(from === null ? start : end, convert, say).entry);
   } else {
     // Two amounts, and each is converted like any other: the number of
     // decimals the person entered, or the two marked guesses.
-    parts.push(fill(t.seaport.amountChanges, { start: from.exact, end: to.exact }));
+    const notes = [];
     const pair = (a, b) => `${a ?? t.amount.largest} → ${b ?? t.amount.largest}`;
     if (from.amount !== undefined || to.amount !== undefined) {
-      parts.push(fill(t.amount.stated, { decimals: say.decimals, amount: pair(from.amount, to.amount) }));
+      notes.push(fill(t.amount.stated, { decimals: say.decimals, amount: pair(from.amount, to.amount) }));
     } else if (from.assumed || to.assumed) {
-      parts.push(t.amount.decimalsUnknown);
+      notes.push(t.amount.decimalsUnknown);
       for (const [index, { decimals }] of (from.assumed ?? to.assumed).entries()) {
-        parts.push(fill(t.amount.assumed, { decimals, amount: pair(from.assumed?.[index].amount, to.assumed?.[index].amount) }));
+        notes.push(fill(t.amount.assumed, { decimals, amount: pair(from.assumed?.[index].amount, to.assumed?.[index].amount) }));
       }
     }
+    entry.sub.push(
+      { label: t.seaport.amountStart, value: String(from.exact) },
+      { label: t.seaport.amountEnd, value: String(to.exact), notes },
+    );
   }
   const recipient = declared(fields, 'recipient');
-  if (recipient) parts.push(fill(t.seaport.recipient, { address: shown(recipient, t) }));
-  return parts.join(' ');
+  if (recipient) entry.sub.push({ label: t.seaport.recipient, value: shown(recipient, t) });
+  return entry;
 }
 
 // ------------------------------------------------------- amounts and times
 
-// The lines that state an amount, and whether it is the largest its field
-// holds. `markLargest` is off only where the headline has just said so.
-function amountLines(field, convert, { t, decimals }, markLargest = true) {
+// An amount: the exact number on its own line, and under it everything we
+// say about that number, so that no statement about an amount is ever apart
+// from the amount. `largestNote` is what to say when the number is the
+// largest its field holds.
+function amountEntry(field, convert, { t, decimals }, largestNote = t.amount.largest) {
   const read = convert ? readAmount(field, decimals) : readCount(field);
-  if (read === null) return { largest: false, lines: [fill(t.amount.unread, { value: shown({ ...field, unread: true }, t) })] };
+  const label = convert ? t.amount.exact : t.amount.count;
+  if (read === null) return { largest: false, entry: { label, value: asWritten(field), notes: [t.page.unreadNote] } };
 
-  const lines = [fill(convert ? t.amount.exact : t.amount.count, read)];
-  if (read.amount !== undefined) lines.push(fill(t.amount.stated, { decimals, amount: read.amount }));
-  if (read.assumed) lines.push(t.amount.decimalsUnknown, ...read.assumed.map((guess) => fill(t.amount.assumed, guess)));
-  if (read.largest && markLargest) lines.push(t.amount.largest);
-  return { largest: read.largest, lines };
+  const notes = [];
+  if (read.largest) notes.push(largestNote);
+  if (read.amount !== undefined) notes.push(fill(t.amount.stated, { decimals, amount: read.amount }));
+  if (read.assumed) notes.push(t.amount.decimalsUnknown, ...read.assumed.map((guess) => fill(t.amount.assumed, guess)));
+  return { largest: read.largest, entry: { label, value: String(read.exact), notes } };
 }
 
-// What goes after a time label: the date and how far it is from now, or what
-// can be said when there is no date to give.
-function timeText(field, { t, now, locale, timeZone }) {
+// A time: the date and how far it is from now, or the number as written
+// with what can be said when there is no date to give.
+function timeEntry(label, field, { t, now, locale, timeZone }) {
   const read = readTime(field, now);
-  if (read === null) return shown({ ...field, unread: true }, t);
+  if (read === null) return { passed: false, entry: { label, value: asWritten(field), notes: [t.page.unreadNote] } };
 
-  const passed = read.date !== null && Number(read.fromNow) < 0;
-  if (read.zero) return [t.time.zero, t.time.passed].join(' ');
-  if (read.largest) return t.time.largest;
-  if (read.date === null) return t.time.beyondDates;
+  const written = String(field.value);
+  if (read.zero) return { passed: true, entry: { label, value: written, notes: [t.time.zero, t.time.passed] } };
+  if (read.largest) return { passed: false, entry: { label, value: written, notes: [t.time.largest] } };
+  if (read.date === null) return { passed: false, entry: { label, value: written, notes: [t.time.beyondDates] } };
 
   const date = new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeStyle: 'medium', timeZone }).format(
     new Date(read.date),
   );
-  const written = `${fill(t.time.date, { date, zone: timeZone })} (${distance(Number(read.fromNow), locale)})`;
-  return passed ? `${written}. ${t.time.passed}` : written;
+  const passed = Number(read.fromNow) < 0;
+  return {
+    passed,
+    entry: {
+      label,
+      value: `${fill(t.time.date, { date, zone: timeZone })} (${distance(Number(read.fromNow), locale)})`,
+      notes: passed ? [t.time.passed] : [],
+    },
+  };
 }
 
 // "in 30 days", "5 minutes ago": written by the language's own rules, in the
