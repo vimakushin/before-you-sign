@@ -206,6 +206,40 @@ test('an amount that is not converted says that decimals change nothing, and ask
   assert.deepEqual(largest.notes, [en.amount.largest, en.amount.largestDecimals]);
 });
 
+test('with more than one token, a number of decimals the person enters is not used', () => {
+  // The batch has two tokens. One number cannot describe both.
+  const several = respond(batch, en, options('en', 6));
+  const all = lines(several);
+  assert.ok(several.details.includes(en.amount.severalTokens));
+  assert.ok(!all.some((line) => line.includes('you entered')));
+  // The marked guesses are still shown for the amount that is converted.
+  assert.ok(all.includes('If the token has 6 decimals: 1. That is an assumption, not a fact.'));
+  // No amount asks for decimals, so the page shows no field for them.
+  const marked = (answer, mark) => answer.details.flatMap((entry) => (Array.isArray(entry.sub) ? entry.sub : [])).filter((sub) => sub[mark]);
+  assert.equal(marked(several, 'decimals').length, 0);
+  assert.equal(marked(several, 'converted').length, 1);
+
+  // The same token listed twice is one token, whatever the case of its letters.
+  const lower = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+  const twice = JSON.parse(batch);
+  twice.message.details = [
+    { token: lower, amount: '1000000', expiration: '0', nonce: '0' },
+    { token: lower.toUpperCase().replace('0X', '0x'), amount: '2000000', expiration: '0', nonce: '1' },
+  ];
+  const one = respond(JSON.stringify(twice), en, options('en', 6));
+  assert.ok(!one.details.includes(en.amount.severalTokens));
+  assert.equal(lines(one).filter((line) => line.startsWith('With the number of decimals you entered (6)')).length, 2);
+  assert.equal(marked(one, 'decimals').length, 2);
+
+  // A Seaport order with two different ERC-20 tokens, and with one.
+  const order = JSON.parse(seaport);
+  assert.ok(!respond(seaport, en, options('en', 6)).details.includes(en.amount.severalTokens));
+  order.message.offer = [{ ...item('1', '5'), token: B }];
+  const two = respond(JSON.stringify(order), en, options('en', 6));
+  assert.equal(two.details[0], en.amount.severalTokens);
+  assert.ok(!lines(two).some((line) => line.includes('you entered')));
+});
+
 test('the list of what was not checked speaks only of what the answer has', () => {
   const list = (text, now = NOW) => respond(text, en, { ...options('en'), now }).notChecked;
   const decimals = en.notChecked['token-decimals'];

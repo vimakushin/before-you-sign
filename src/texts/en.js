@@ -215,6 +215,8 @@ export default {
     stated: 'With the number of decimals you entered ({decimals}): {amount}. The result is only as accurate as that number.',
     largest: 'This is the largest number this field can hold. Nothing larger fits in it.',
     largestNotable: 'The amount in this request is the largest number its field can hold.',
+    severalTokens:
+      'This request has more than one token. Each token has its own number of decimals, so we do not convert the amounts by a number you enter.',
     largestUnexplained: 'We do not know what this token does with such an amount.',
     largestDecimals: "We do not ask for the token's decimals here: the amount is the largest number the field can hold, however many decimals the token has.",
   },

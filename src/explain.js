@@ -26,7 +26,7 @@
 import { parseRequest } from './parse.js';
 import { recognise } from './known-types.js';
 import { notChecked } from './unknowns.js';
-import { readAmount, readCount, readTime, readInteger, notRead, losesDigits } from './values.js';
+import { readAmount, readCount, readTime, readInteger, isAddress, notRead, losesDigits } from './values.js';
 import { networkName } from './networks.js';
 
 // `texts` is one of the files in texts/; `now` is the current time in
@@ -57,7 +57,7 @@ export function respond(pasted, texts, { now, decimals, locale, timeZone }) {
 // an amount that is the largest its field holds is not converted at all.
 const SAID_ONLY_WITH = {
   'device-clock': (entries) => entries.some((entry) => entry.clock),
-  'token-decimals': (entries) => entries.some((entry) => entry.decimals) || !entries.some((entry) => entry.largest),
+  'token-decimals': (entries) => entries.some((entry) => entry.converted) || !entries.some((entry) => entry.largest),
 };
 
 function everyEntry(entries) {
@@ -170,6 +170,17 @@ function network(parsed, { t }) {
 
 // ------------------------------------------------------------------- roles
 
+// The number of decimals a person enters describes one token. A request can
+// name several, each with its own number, and one number applied to all of
+// them would give an amount that looks exact and is wrong, under the words
+// "you entered". So with more than one token the entered number is not used
+// at all, and the answer says why. Takes the fields that hold the tokens'
+// addresses; one that could not be read counts as a token of its own.
+function forTokens(say, tokens) {
+  const distinct = new Set(tokens.map((field) => (isAddress(field.value) && !notRead(field) ? field.value.toLowerCase() : field)));
+  return distinct.size > 1 ? { ...say, decimals: undefined, several: true } : say;
+}
+
 function explained(parsed, known, say) {
   const { t } = say;
   const { message, domain } = parsed;
@@ -262,9 +273,10 @@ function explained(parsed, known, say) {
     case 'permit2-permit-batch': {
       // Each token says for itself whether its amount is the largest: with
       // several tokens, the main sentence alone would not say which one it is.
-      const tokens = (member('details').items ?? []).map((entry, index) => {
-        const details = entry.fields ?? [];
-        const amount = amountEntry(member('amount', details), true, say, true);
+      const entries = (member('details').items ?? []).map((entry) => entry.fields ?? []);
+      const each = forTokens(say, entries.map((details) => member('token', details)));
+      const tokens = entries.map((details, index) => {
+        const amount = amountEntry(member('amount', details), true, each, true);
         return {
           largest: amount.largest,
           entry: {
@@ -278,6 +290,7 @@ function explained(parsed, known, say) {
         notable,
         details: [
           address(t.label.spender, member('spender')),
+          ...(each.several ? [t.amount.severalTokens] : []),
           ...tokens.map((token) => token.entry),
           t.permit2.twoTimes,
           signatureDeadline(member('sigDeadline'), t.permit2.rejectsLate),
@@ -302,11 +315,18 @@ function explained(parsed, known, say) {
       };
     }
     case 'seaport-order': {
-      const items = (name) => (member(name).items ?? []).map((item) => itemEntry(item.fields ?? [], known, say));
+      const listed = (name) => (member(name).items ?? []).map((item) => item.fields ?? []);
+      // Only an ERC-20 item (itemType 1) has an amount converted by decimals.
+      const erc20 = [...listed('offer'), ...listed('consideration')].filter(
+        (fields) => readInteger(declared(fields, 'itemType')?.value) === 1n,
+      );
+      const each = forTokens(say, erc20.map((fields) => declared(fields, 'token') ?? {}));
+      const items = (name) => listed(name).map((fields) => itemEntry(fields, known, each));
       return {
         main: t.main.seaport,
         notable,
         details: [
+          ...(each.several ? [t.amount.severalTokens] : []),
           { heading: t.seaport.offer },
           ...items('offer'),
           t.seaport.offerRecipient,
@@ -370,7 +390,7 @@ function itemEntry(fields, known, say) {
     }
     entry.sub.push(
       { label: t.seaport.amountStart, value: String(from.exact) },
-      { label: t.seaport.amountEnd, value: String(to.exact), notes, decimals: convert },
+      { label: t.seaport.amountEnd, value: String(to.exact), notes, converted: convert, decimals: convert && !say.several },
     );
   }
   const recipient = declared(fields, 'recipient');
@@ -385,12 +405,13 @@ function itemEntry(fields, known, say) {
 // from the amount. `unlimited` is true where the protocol's source gives the
 // largest amount a meaning of its own (Permit2's allowances).
 //
-// Two marks on the entry are for the page and for the "not checked" list:
-// `decimals`, when the amount is converted and so the person can usefully
-// say how many decimals the token has, and `largest`, when it is not
-// converted at all. The second case says so in words: an input that changes
-// nothing with no reason given looks broken.
-function amountEntry(field, convert, { t, decimals }, unlimited = false) {
+// Three marks on the entry are for the page and for the "not checked" list:
+// `converted`, when a conversion by decimals is shown; `decimals`, when the
+// person can usefully say how many decimals the token has, which is the same
+// thing unless the request has several tokens; and `largest`, when the
+// amount is not converted at all. That last case says so in words: an input
+// that changes nothing with no reason given looks broken.
+function amountEntry(field, convert, { t, decimals, several }, unlimited = false) {
   const read = convert ? readAmount(field, decimals) : readCount(field);
   const label = convert ? t.amount.exact : t.amount.count;
   if (read === null) return { largest: false, entry: { label, value: asWritten(field), notes: [t.page.unreadNote] } };
@@ -403,7 +424,10 @@ function amountEntry(field, convert, { t, decimals }, unlimited = false) {
   }
   if (read.amount !== undefined) entry.notes.push(fill(t.amount.stated, { decimals, amount: read.amount }));
   if (read.assumed) entry.notes.push(t.amount.decimalsUnknown, ...read.assumed.map((guess) => fill(t.amount.assumed, guess)));
-  if (read.amount !== undefined || read.assumed) entry.decimals = true;
+  if (read.amount !== undefined || read.assumed) {
+    entry.converted = true;
+    if (!several) entry.decimals = true;
+  }
   return { largest: read.largest, entry };
 }
 

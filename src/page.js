@@ -72,9 +72,6 @@ function showAnswer({ typed = false, scroll = false } = {}) {
     // amount, a trillion times off, under the words "you entered".
     decimals.value = '';
   }
-  // Drawing the answer again takes the decimals field off the page and puts
-  // it back; someone typing in it must not lose their place.
-  const typingDecimals = document.activeElement === decimals;
   decimalsField.hidden = true;
   answer.replaceChildren();
   byId('pasted').textContent = request.value === '' ? '' : texts.page.pasted.replace('{count}', request.value.length);
@@ -83,21 +80,10 @@ function showAnswer({ typed = false, scroll = false } = {}) {
     return;
   }
 
-  // A value that cannot be a number of decimals is not used, and the person
-  // is told so rather than left to guess. An empty box is not a value.
-  const stated = decimals.value === '' ? undefined : Number(decimals.value);
-  const rejected = decimals.validity.badInput || (stated !== undefined && !validDecimals(stated));
-  decimalsNote.textContent = rejected ? texts.page.decimalsRejected : '';
-
   let result;
   try {
-    result = respond(request.value, texts, {
-      now: Date.now() / 1000,
-      decimals: stated,
-      locale: lang,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    });
-    answer.append(...(result.refused ? refusal(result) : explanation(result, texts)));
+    result = respond(request.value, texts, options(lang, texts));
+    answer.append(...(result.refused ? refusal(result) : explanation(result, texts, true)));
   } catch (error) {
     // Drawing a request nested very deep can run out of stack the same way
     // reading it can. The answer is the same refusal, not a blank page.
@@ -111,10 +97,53 @@ function showAnswer({ typed = false, scroll = false } = {}) {
     byId('pasted').textContent = '';
     emptiedForSecretWords = true;
   }
-  if (typingDecimals && decimalsField.isConnected) decimals.focus();
-  // Only on a paste into the box: the decimals field is inside the answer, and
-  // jumping back up while a digit is being typed there would get in the way.
+  // Only on a paste into the box, not on a change of language.
   if (scroll) answer.firstElementChild?.scrollIntoView({ block: 'nearest' });
+}
+
+// What explain.js needs besides the text. A value that cannot be a number of
+// decimals is not used, and the person is told so rather than left to guess.
+// An empty box is not a value.
+function options(lang, texts) {
+  const stated = decimals.value === '' ? undefined : Number(decimals.value);
+  const rejected = decimals.validity.badInput || (stated !== undefined && !validDecimals(stated));
+  decimalsNote.textContent = rejected ? texts.page.decimalsRejected : '';
+  return {
+    now: Date.now() / 1000,
+    decimals: stated,
+    locale: lang,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  };
+}
+
+// A digit typed into the decimals field changes only the lines under the
+// amounts. Those lines are replaced, and nothing else on the page is touched.
+// The field itself stays where it is: taking an input off the page and
+// putting it back on every keystroke closes the keyboard on a phone after
+// the first digit.
+function showConversions() {
+  const texts = LANGUAGES[language()];
+  let drawn;
+  try {
+    const result = respond(request.value, texts, options(language(), texts));
+    if (result.refused) return showAnswer();
+    drawn = element('div');
+    drawn.append(...explanation(result, texts, false));
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return showAnswer();
+  }
+  const shown = answer.querySelectorAll('.detail');
+  const fresh = drawn.querySelectorAll('.detail');
+  // The same request gives the same entries in the same order. If it ever
+  // does not, drawing everything again is right and losing the keyboard is
+  // the lesser harm.
+  if (shown.length !== fresh.length) return showAnswer();
+  shown.forEach((block, index) => {
+    for (const note of block.querySelectorAll(':scope > .note')) note.remove();
+    const above = block.querySelector(':scope > .value') ?? block.querySelector(':scope > .label');
+    above.after(...fresh[index].querySelectorAll(':scope > .note'));
+  });
 }
 
 function refusal({ refused }) {
@@ -125,7 +154,11 @@ function refusal({ refused }) {
 // what the signature gives, what must not be missed, the one thing the page
 // asks the person to do (compare with the wallet), the details, how the
 // request works, what was not checked, and last the request as written.
-function explanation({ main, notable, details, mechanics, notChecked, domain, message }, { page }) {
+//
+// `placeField` is false when the answer is drawn only to take the lines
+// under the amounts from it: the decimals field then stays where it is.
+function explanation({ main, notable, details, mechanics, notChecked, domain, message }, { page }, placeField) {
+  const entry = (item) => drawEntry(item, placeField);
   const list = element('ul');
   list.append(...notChecked.map((line) => element('li', line)));
   return [
@@ -173,22 +206,22 @@ function valueNode(tag, text, className) {
 
 // One entry of the details: a sentence, a heading, or a value from the
 // request on a line of its own under a label that says what it is.
-function entry(item) {
+function drawEntry(item, placeField) {
   if (typeof item === 'string') return element('p', item);
   if (item.heading) return element('h3', item.heading);
   const block = element('div', undefined, 'detail');
   block.append(element('p', item.label, 'label'));
   if (item.value !== undefined) block.append(valueNode('p', item.value, 'value'));
-  block.append(...(item.notes ?? []).map((note) => element('p', note)));
+  block.append(...(item.notes ?? []).map((note) => element('p', note, 'note')));
   // The field for the token's decimals goes under the first amount that is
   // converted by them: that is where the page says it does not know them.
-  if (item.decimals && decimalsField.hidden) {
+  if (placeField && item.decimals && decimalsField.hidden) {
     decimalsField.hidden = false;
     block.append(decimalsField);
   }
   if (item.sub?.length > 0) {
     const sub = element('div', undefined, 'sub');
-    sub.append(...item.sub.map(entry));
+    sub.append(...item.sub.map((child) => drawEntry(child, placeField)));
     block.append(sub);
   }
   return block;
@@ -231,7 +264,7 @@ function asWritten(value) {
 }
 
 request.addEventListener('input', () => showAnswer({ typed: true, scroll: true }));
-decimals.addEventListener('input', () => showAnswer());
+decimals.addEventListener('input', showConversions);
 addEventListener('hashchange', () => {
   showFixedTexts();
   showAnswer();

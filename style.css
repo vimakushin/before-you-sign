@@ -162,7 +162,7 @@ h3 {
   margin: 0.9rem 0;
 }
 
-.detail p {
+.detail > p {
   margin: 0.2rem 0;
 }
 
