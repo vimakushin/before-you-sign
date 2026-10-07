@@ -207,6 +207,12 @@ h3 {
   font-weight: 600;
 }
 
+/* Which fields to look at there: plain weight, so that the one request above
+   it stays the heaviest line. */
+.compare {
+  margin: -0.25rem 0 0.75rem;
+}
+
 /* A value from the request on a line of its own: a quiet label saying what
    it is, then the value in type where 0 and O, 1 and l differ. */
 .detail {

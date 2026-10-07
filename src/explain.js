@@ -11,6 +11,9 @@
 //               deadline that has already passed, an amount that is the
 //               largest its field holds. Each is { text, note }: the fact,
 //               and what the protocol's own source says follows from it;
+//   compare     which fields of this kind of request to look at in the wallet,
+//               shown under the sentence that sends the person there; absent
+//               for a request we do not explain;
 //   details     who, which token, how much, until when;
 //   mechanics   how the request works: its domain, and what a matching
 //               domain does and does not tell;
@@ -42,6 +45,7 @@ export function respond(pasted, texts, { now, decimals, locale, timeZone }) {
   const said = everyEntry(answer.details);
   return {
     ...answer,
+    compare: known?.roles ? texts.compare[known.kind] : undefined,
     notChecked: notChecked(parsed, known)
       .filter((code) => SAID_ONLY_WITH[code]?.(said) ?? true)
       .map((code) => fill(texts.notChecked[code], blanksFor(code, parsed))),

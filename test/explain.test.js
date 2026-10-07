@@ -388,3 +388,11 @@ test('refusals say what was seen', () => {
   const renamed = mail.replace('"primaryType":"Mail"', '"primaryType":"Letter"');
   assert.match(respond(renamed, en, options('en')).refused[0], /names "Letter" as its primary type/);
 });
+
+test('what to compare in the wallet is named for the kinds we explain, and for them only', () => {
+  for (const texts of [en, ru]) {
+    for (const kind of Object.keys(texts.form)) assert.equal(typeof texts.compare[kind], 'string', kind);
+    assert.equal(respond(permitSingle, texts, options('en')).compare, texts.compare['permit2-permit-single']);
+    assert.equal(respond(mail, texts, options('en')).compare, undefined);
+  }
+});

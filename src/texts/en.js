@@ -21,19 +21,22 @@ export default {
       'This page is an explanation, not a copy of what you sign. Compare it with what your wallet shows before you sign.',
     notCheckedTitle: 'What we have not checked',
     title: 'Before you sign',
-    lead: 'A website can ask your wallet for a signature instead of a transaction. A wallet may show that request as a block of data, with addresses in hexadecimal and amounts in the token\'s smallest units. This page describes what the request says, as far as we can read it. It does not tell you whether to sign it.',
+    lead:
+      'A website can ask your wallet for a signature instead of a transaction. This page describes what such a request says, as far as we can read it. It does not tell you whether to sign it.',
     when: 'Use it when your wallet shows you such a request and you want to read what it says before you sign.',
     how: 'To get the request: if your wallet lets you copy it as text, copy all of it and paste it below. If it does not, there is nothing to paste.',
     replaceAsk: 'The box already has text. Replace it with the example?',
     exampleLargest: 'Example: no limit on the amount',
     exampleParticular: 'Example: a particular amount',
     exampleNote:
-      "This is an example written for this page, not a request from your wallet. Its signature deadline and allowance expiration are counted from when you pressed the button.",
+      'This is an example written for this page, not a request from your wallet. The times in it are counted from when you pressed the button.',
     gift: 'This page was made by one person. It is free and has no ads. If it was useful, you may send the author a voluntary gift in USDT on BNB Smart Chain (BEP-20).',
     giftAddress: "Author's address for gifts: USDT, BNB Smart Chain (BEP-20)",
     giftApart: "This is the author's own address for gifts. It is not taken from any request you paste.",
-    inputLabel: 'Signing request (the JSON your wallet shows)',
-    decimalsLabel: 'Token decimals, if you know them (optional)',
+    inputLabel:
+      'Signing request (JSON: text in curly braces { })',
+    decimalsLabel:
+      'Token decimals (digits after the decimal point), if you know them (optional)',
     detailsTitle: 'Details',
     mechanicsTitle: 'How this request works',
     unreadNote: 'We could not read this value. It is shown as written.',
@@ -67,6 +70,18 @@ export default {
     primaryType: 'the name of the main kind of data',
     domain: 'the description of where the request is addressed',
     message: 'the contents of the request itself',
+  },
+
+  // Under the sentence that sends the person to the wallet: which fields of
+  // this kind of request to look at there. Only for the kinds we explain. The
+  // names are those of the labels in the answer.
+  compare: {
+    'erc2612-permit': 'Fields to compare: the address that may spend, the address whose tokens may be spent, the amount and the signature deadline.',
+    'dai-permit': 'Fields to compare: the address that may spend, the address whose tokens may be spent, the yes-or-no answer and the signature deadline.',
+    'permit2-permit-single': 'Fields to compare: the address that may spend, the token, the amount and both times.',
+    'permit2-permit-batch': 'Fields to compare: the address that may spend, each token with its amount and expiration, and the signature deadline.',
+    'permit2-permit-transfer-from': 'Fields to compare: the address that may make the transfer, the token, the amount and the signature deadline.',
+    'seaport-order': 'Fields to compare: the items that may be transferred, the items that must be received with the addresses that receive them, and the start and end times.',
   },
 
   notChecked: {
@@ -154,8 +169,10 @@ export default {
     unexplained: 'We have no explanation for the type of this request.',
     unexplainedMore: 'Below is what the request contains. We do not explain what its fields mean.',
     noContract: 'The domain of this request names no contract, so the request does not show which contract it is for.',
-    network: 'Chain ID {chainId}.',
-    networkNamed: 'Chain ID {chainId}: {name}, as named in EIP-155.',
+    network:
+      'Chain ID {chainId}, the number that identifies the network.',
+    networkNamed:
+      'Chain ID {chainId}, the number that identifies the network: {name}, as named in EIP-155.',
   },
 
   erc2612: {
@@ -184,7 +201,7 @@ export default {
     batchToken: 'Token {n}, by the address of its contract',
     owner: 'The request does not name whose tokens these are. They are the tokens of whoever signs.',
     twoTimes:
-      'This request has two separate times, and they mean different things: until when the signature can be submitted, and until when the allowance it creates can be spent.',
+      'This request has two separate times, and they mean different things: until when the signature can be submitted, and until when the allowance it creates (the right to spend) can be used.',
     expiration: 'Allowance expiration: the last moment the allowance can be spent',
     expirationPassed: "By your device's clock, the expiration of the allowance in this request has already passed.",
     expirationZero:

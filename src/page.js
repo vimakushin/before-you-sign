@@ -111,8 +111,11 @@ function showAnswer({ typed = false, scroll = false } = {}) {
     byId('pasted').textContent = '';
     emptiedForSecretWords = true;
   }
-  // Only on a paste into the box, not on a change of language.
-  if (scroll) answer.firstElementChild?.scrollIntoView({ block: 'nearest' });
+  // Only on a paste into the box or a press of an Example button, not on a
+  // change of language. After an example the screen starts at the line that
+  // says it is an example: the sentence under it is what the button is for,
+  // and a screen that kept the box on top left it below the fold.
+  if (scroll) answer.firstElementChild?.scrollIntoView({ block: showingExample ? 'start' : 'nearest' });
 }
 
 // What explain.js needs besides the text. A value that cannot be a number of
@@ -155,7 +158,8 @@ function showConversions() {
   if (shown.length !== fresh.length) return showAnswer();
   shown.forEach((block, index) => {
     for (const note of block.querySelectorAll(':scope > .note')) note.remove();
-    const above = block.querySelector(':scope > .value') ?? block.querySelector(':scope > .label');
+    const above =
+      block.querySelector(':scope > #decimals-field') ?? block.querySelector(':scope > .value') ?? block.querySelector(':scope > .label');
     above.after(...fresh[index].querySelectorAll(':scope > .note'));
   });
 }
@@ -171,7 +175,7 @@ function refusal({ refused }) {
 //
 // `placeField` is false when the answer is drawn only to take the lines
 // under the amounts from it: the decimals field then stays where it is.
-function explanation({ main, notable, details, mechanics, notChecked, domain, message }, { page }, placeField) {
+function explanation({ main, notable, compare, details, mechanics, notChecked, domain, message }, { page }, placeField) {
   const entry = (item) => drawEntry(item, placeField);
   const list = element('ul');
   list.append(...notChecked.map((line) => element('li', line)));
@@ -179,6 +183,7 @@ function explanation({ main, notable, details, mechanics, notChecked, domain, me
     element('p', main, 'main'),
     ...notable.map(framed),
     element('p', page.wallet, 'wallet'),
+    ...(compare ? [element('p', compare, 'compare')] : []),
     element('h2', page.detailsTitle),
     ...details.map(entry),
     ...(mechanics.length > 0 ? [element('h2', page.mechanicsTitle), ...mechanics.map(entry)] : []),
@@ -226,13 +231,15 @@ function drawEntry(item, placeField) {
   const block = element('div', undefined, 'detail');
   block.append(element('p', item.label, 'label'));
   if (item.value !== undefined) block.append(valueNode('p', item.value, 'value'));
-  block.append(...(item.notes ?? []).map((note) => element('p', note, 'note')));
   // The field for the token's decimals goes under the first amount that is
-  // converted by them: that is where the page says it does not know them.
+  // converted by them, and above the lines that say what the amount would be
+  // without them: a person should see first that the number can be entered,
+  // and only then the guesses for when it is not known.
   if (placeField && item.decimals && decimalsField.hidden) {
     decimalsField.hidden = false;
     block.append(decimalsField);
   }
+  block.append(...(item.notes ?? []).map((note) => element('p', note, 'note')));
   if (item.sub?.length > 0) {
     const sub = element('div', undefined, 'sub');
     sub.append(...item.sub.map((child) => drawEntry(child, placeField)));
