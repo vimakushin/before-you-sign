@@ -332,8 +332,9 @@ const KNOWN = [
 // the signature: any contract can ask for a signature over these same types
 // and do something else with it. A signature is tied to a contract by the
 // domain, and a contract accepts it only if the whole domain is the one it
-// hashes itself: the declaration, the name, the version, the address. So that
-// is what is compared, not the address alone. EIP-712 calls verifyingContract
+// hashes itself: which fields it declares and every value in them (the name,
+// the address and the version, where the domain has one; Permit2's has none).
+// So that is what is compared, not the address alone. EIP-712 calls verifyingContract
 // "the address of the contract that will verify the signature".
 //
 // `unverified` says why the comparison did not succeed:

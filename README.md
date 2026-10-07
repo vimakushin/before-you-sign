@@ -22,7 +22,7 @@ That rule is built into the code rather than left to the wording:
 
 - No colour on the page carries meaning.
 - The parser's results are named for what the parser did (`parsed`, `unread`), not for what the request is.
-- A protocol is named only when the whole domain of the request (declaration, name, version, address) matches the one its authors publish. When it does not match, the page says the request has that form and that it could not establish which contract it is for. It does not say why.
+- A protocol is named only when the whole domain of the request matches the one its authors publish: which fields it declares and every value the authors publish (the name, the address and the version, where the domain has one). When it does not match, the page says the request has that form and that it could not establish which contract it is for. It does not say why.
 - A test fails if any sentence in either language contains a word from a fixed list of words that read as a verdict.
 
 ## What it reads
