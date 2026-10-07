@@ -29,7 +29,7 @@ export default {
     exampleParticular: 'Example: a particular amount',
     exampleNote:
       "This is an example written for this page, not a request from your wallet. Its signature deadline and allowance expiration are counted from when you pressed the button.",
-    gift: 'This page was made by one person. It is free and has no ads. If it was useful, you may send the author a voluntary gift in USDT on BNB Smart Chain (BEP-20). You do not have to send anything.',
+    gift: 'This page was made by one person. It is free and has no ads. If it was useful, you may send the author a voluntary gift in USDT on BNB Smart Chain (BEP-20).',
     giftAddress: "Author's address for gifts: USDT, BNB Smart Chain (BEP-20)",
     giftApart: "This is the author's own address for gifts. It is not taken from any request you paste.",
     inputLabel: 'Signing request (the JSON your wallet shows)',
