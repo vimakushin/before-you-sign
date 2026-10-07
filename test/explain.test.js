@@ -351,7 +351,7 @@ test('a value that is absent or unreadable is never put into a sentence as if it
     assert.ok(!lines(answer).some((line) => /undefined/.test(line)), JSON.stringify(details));
     assert.equal(answer.main, en.main.allowance);
     assert.equal(labelled(answer.details, en.label.token).value, '— (we could not read this)', JSON.stringify(details));
-    assert.deepEqual(labelled(answer.details, en.amount.exact).notes, [en.page.unreadNote]);
+    assert.deepEqual(labelled(answer.details, en.amount.exactUnread).notes, [en.page.unreadNote]);
   }
   // The list names the place, not only the last word of it.
   const named = lines(broken((data) => (data.message.details.token = 'hello')));
@@ -482,5 +482,64 @@ test('the note that we do not know what a token does with the largest amount sta
       assert.equal(said.length, 1);
       assert.equal(said[0].note, texts.amount.largestUnexplained);
     }
+  }
+});
+
+test('in a Seaport item a side whose amount could not be read is shown as written and marked, and the side that was read is shown too', () => {
+  const LARGEST = (2n ** 256n - 1n).toString();
+  const withAmounts = (startAmount, endAmount) => {
+    const order = JSON.parse(seaport);
+    order.message.consideration = [{ ...item('1', '5'), startAmount, endAmount, recipient: A }];
+    return JSON.stringify(order);
+  };
+  for (const texts of [en, ru]) {
+    const labelledSides = (answer) => {
+      const consideration = answer.details.find((entry) => entry.label === texts.seaport.erc20);
+      const side = (label, unreadLabel) => consideration.sub.find((entry) => entry.label === label || entry.label === unreadLabel);
+      return {
+        start: side(texts.seaport.amountStart, texts.seaport.amountStartUnread),
+        end: side(texts.seaport.amountEnd, texts.seaport.amountEndUnread),
+      };
+    };
+    // Unreadable start, readable end; and the other way round.
+    for (const [startAmount, endAmount, readable, unreadable] of [['abc', '5', 'end', 'start'], ['5', 'abc', 'start', 'end']]) {
+      const sides = labelledSides(respond(withAmounts(startAmount, endAmount), texts, options('en')));
+      assert.equal(sides[readable].value, '5', `${startAmount} ${endAmount}`);
+      assert.equal(sides[unreadable].value, '"abc"');
+      assert.deepEqual(sides[unreadable].notes, [texts.page.unreadNote]);
+      // The label of a value shown as written does not say it is shown in base 10.
+      assert.equal(sides[unreadable].label, texts.seaport[`amount${unreadable === 'start' ? 'Start' : 'End'}Unread`]);
+      assert.ok(!sides[unreadable].label.includes('base 10') && !sides[unreadable].label.includes('десятичн'));
+    }
+    // Both unreadable: both are shown, both marked.
+    const both = labelledSides(respond(withAmounts('abc', 'xyz'), texts, options('en')));
+    assert.equal(both.start.value, '"abc"');
+    assert.equal(both.end.value, '"xyz"');
+    // Unreadable start, end that is the largest: the fact is said at the top as well.
+    const largest = respond(withAmounts('abc', LARGEST), texts, options('en'));
+    assert.equal(labelledSides(largest).end.value, LARGEST);
+    assert.ok(facts(largest).includes(texts.amount.largestNotable));
+    // A readable amount still gets its conversion where the other is unreadable.
+    assert.ok(lines(respond(withAmounts('abc', '5'), texts, options('en'))).some((line) => line.includes(texts.amount.decimalsUnknown)));
+  }
+});
+
+test('a Seaport item with an unreadable side has the same entries whether or not the decimals are entered, and one place for them', () => {
+  // The page redraws only the lines under the amounts when a digit is typed in
+  // the decimals field, and does so by matching the old and the new blocks one
+  // to one. So the number of entries must not depend on the number typed, and
+  // the field must be asked for once.
+  const count = (entries) => entries.reduce((total, entry) => total + 1 + (typeof entry === 'object' ? count(entry.sub ?? []) : 0), 0);
+  const asking = (entries) => entries.reduce((total, entry) => total + (entry?.decimals ? 1 : 0) + (typeof entry === 'object' ? asking(entry.sub ?? []) : 0), 0);
+  for (const [startAmount, endAmount] of [['abc', '5'], ['5', 'abc'], ['abc', 'xyz'], ['5', '7']]) {
+    const order = JSON.parse(seaport);
+    order.message.consideration = [{ ...item('1', '5'), startAmount, endAmount, recipient: A }];
+    const text = JSON.stringify(order);
+    const unset = respond(text, en, options('en'));
+    const typed = respond(text, en, options('en', 6));
+    assert.equal(count(unset.details), count(typed.details), `${startAmount} ${endAmount}`);
+    const readable = [startAmount, endAmount].some((value) => /^\d+$/.test(value));
+    assert.equal(asking(unset.details), readable ? 1 : 0, `${startAmount} ${endAmount}`);
+    assert.equal(asking(typed.details), asking(unset.details));
   }
 });

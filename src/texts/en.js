@@ -231,6 +231,10 @@ export default {
     tokenId: 'Token ID',
     anyItem: 'The criterion is zero, which means any item of this collection.',
     amountStart: 'Amount when the order begins (value from the request, shown in base 10)',
+    // A value that could not be read is shown as written, so its label does not
+    // say it is shown in base 10.
+    amountStartUnread: 'Amount when the order begins (value from the request)',
+    amountEndUnread: 'Amount when the order ends (value from the request)',
     amountEnd: 'Amount when the order ends (value from the request, shown in base 10)',
     starts: 'Order starts',
     ends: 'Order ends',
@@ -243,6 +247,8 @@ export default {
   amount: {
     exact: "Amount from the request, shown in base 10 (in the token's smallest units)",
     count: 'Number from the request, shown in base 10',
+    exactUnread: 'Amount from the request',
+    countUnread: 'Number from the request',
     decimalsUnknown: 'We do not know how many decimals this token has. Two examples of what the amount would be:',
     assumed: 'If the token has {decimals} decimals: {amount}. That is an assumption, not a fact.',
     stated: 'With the number of decimals you entered ({decimals}): {amount}. The result is only as accurate as that number.',

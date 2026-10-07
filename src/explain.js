@@ -409,8 +409,22 @@ function itemEntry(fields, known, say, notable) {
   // Only an ERC-20 item has a token whose behaviour with such an amount we
   // say we do not know; for the others the arithmetic alone is said.
   const largestFact = { text: t.amount.largestNotable, note: convert ? t.amount.largestUnexplained : undefined };
-  if (from === null || to === null || from.exact === to.exact) {
-    const single = amountEntry(from === null ? start : end, convert, say);
+  if (from === null || to === null) {
+    // One of the two amounts, or both, could not be read. What was read is
+    // shown as it would be anywhere else, and what was not is shown as
+    // written and marked: hiding the one we read would leave the person
+    // without half of what is known, and without knowing there was a half.
+    const sides = [
+      [start, from, t.seaport.amountStart, t.seaport.amountStartUnread],
+      [end, to, t.seaport.amountEnd, t.seaport.amountEndUnread],
+    ];
+    for (const [field, side, label, unreadLabel] of sides) {
+      const drawn = amountEntry(field, convert, say);
+      if (drawn.largest) once(notable, largestFact);
+      entry.sub.push({ ...drawn.entry, label: side === null ? unreadLabel : label });
+    }
+  } else if (from.exact === to.exact) {
+    const single = amountEntry(end, convert, say);
     if (single.largest) once(notable, largestFact);
     entry.sub.push(single.entry);
   } else {
@@ -456,7 +470,11 @@ function itemEntry(fields, known, say, notable) {
 function amountEntry(field, convert, { t, decimals, several }, unlimited = false) {
   const read = convert ? readAmount(field, decimals) : readCount(field);
   const label = convert ? t.amount.exact : t.amount.count;
-  if (read === null) return { largest: false, entry: { label, value: asWritten(field), notes: [t.page.unreadNote] } };
+  // A value we could not read is shown as written, not in base 10, and its
+  // label does not say it is.
+  if (read === null) {
+    return { largest: false, entry: { label: convert ? t.amount.exactUnread : t.amount.countUnread, value: asWritten(field), notes: [t.page.unreadNote] } };
+  }
 
   const entry = { label, value: String(read.exact), notes: [] };
   if (read.largest) {

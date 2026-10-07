@@ -4,7 +4,8 @@
 // elsewhere, but none of it has been read, and a wrong network name is worse
 // than a number. Retrieved 2026-10-04, at this fixed commit; the page links to
 // the same version next to a name, so that a person can read the list the name
-// comes from:
+// comes from. Opened and read by the owner on 2026-10-08: the document opens,
+// its category is Core, its status Final, and it holds the table of chain IDs.
 export const EIP_155 = 'https://github.com/ethereum/EIPs/blob/3b3c832577ec4205d463d990d52006e299962449/EIPS/eip-155.md';
 const NAMES = {
   1: 'Ethereum mainnet',

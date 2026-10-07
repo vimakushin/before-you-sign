@@ -69,7 +69,7 @@ And about the project itself:
 
 What you sign is decided on your wallet's screen. This page is an explanation to compare it with, not a replacement for it.
 
-## Nothing leaves the browser
+## The page sends nothing
 
 Everything is computed in the page. There is no server, no build step and no dependency; the files in this repository are the files the browser runs.
 
