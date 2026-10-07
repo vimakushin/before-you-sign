@@ -195,6 +195,11 @@ const KNOWN = [
     // IAllowanceTransfer.sol says of this whole interface: "Requires user's
     // token approval on the Permit2 contract". Whether the person has given
     // that approval is not in the request.
+    //
+    // Whose tokens these are is not quoted from any source: it is read off the
+    // request. The type string below has no field for an owner, only a spender,
+    // so the request names no one whose tokens they are, and the page says
+    // they are the tokens of whoever signs. Basis: visible from the request.
     kind: 'permit2-permit-single',
     unchecked: ['network-not-compared', 'prior-approval-of-permit2'],
     encodeType:
@@ -274,8 +279,20 @@ const KNOWN = [
     // offerer's account"; "The consideration contains an array of items that
     // must be received in order to fulfill the order", each with "a recipient
     // that will receive" it. startTime is when "the order becomes active",
-    // endTime when it "expires". The contract hashes the three type strings
-    // joined in this order: OrderComponents, ConsiderationItem, OfferItem.
+    // endTime when it "expires".
+    //
+    // Two more sentences of the same documentation (read 2026-10-07 at the
+    // commit linked below) stand behind two lines the page says. Of the
+    // consideration: "This array may be extended by the fulfiller on order
+    // fulfillment so as to support \"tipping\" (e.g. relayer or referral
+    // payments)." Of `identifierOrCriteria` in a criteria-based item type: it
+    // "can optionally be zero for criteria-based item types to allow for any
+    // identifier". The page says the first as "whoever carries out the order
+    // may add entries of their own", and the second as "any item of this
+    // collection".
+    //
+    // The contract hashes the three type strings joined in this order:
+    // OrderComponents, ConsiderationItem, OfferItem.
     // https://github.com/ProjectOpenSea/seaport-core/blob/523097f9cee66c15d308c900c50f336b291cda08/src/lib/ConsiderationBase.sol
     // https://github.com/ProjectOpenSea/seaport/blob/7f966fe7bd75932beb0366f6485aa720512b1259/docs/SeaportDocumentation.md
     // Seaport 1.5 declares the same types: its three type strings, at the

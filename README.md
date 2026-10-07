@@ -73,7 +73,7 @@ What you sign is decided on your wallet's screen. This page is an explanation to
 
 Everything is computed in the page. There is no server, no build step and no dependency; the files in this repository are the files the browser runs.
 
-The page makes no network requests while it works, and a Content-Security-Policy in [`index.html`](index.html) tells the browser to refuse any: scripts and styles from the same site only, every other kind of connection blocked. Nothing is stored either: no cookies, no local storage. The language is kept in the address of the page.
+The page makes no network requests while it works, and a Content-Security-Policy in [`index.html`](index.html) tells the browser to refuse any: scripts and styles from the same site only, every other kind of connection blocked. The page does not write to the browser's storage: its code does not set cookies and does not call local storage, session storage or IndexedDB, and the code is open. The language is kept in the address of the page. The only link on the page that leaves it is the one to EIP-155 beside the name of a network; it opens in a new tab, and only when you click it.
 
 Everything that comes from a pasted request is put on the page as text, not as markup.
 

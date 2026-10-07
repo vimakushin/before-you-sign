@@ -116,7 +116,7 @@ export default {
       "The request has fields that its own type description does not mention: {names}. EIP-712's encoding covers only the described fields. We do not know what your wallet does with the others.",
     'unread-values': 'We could not read some values: {names}. They are shown as written.',
     'bare-large-numbers':
-      'Some large numbers are written without quotes: {names}. Parsed in the usual way, such a number loses precision. We show the digits as written. We have not checked what your wallet would sign.',
+      'Some large numbers are written without quotes: {names}. If a program reads such a number in the usual way, it loses precision. We show the digits as written. We have not checked what your wallet would sign.',
   },
 
   form: {
@@ -172,6 +172,7 @@ export default {
     noContract: 'The domain of this request names no contract, so the request does not show which contract it is for.',
     network:
       'Chain ID {chainId}, the number that identifies the network.',
+    networkSource: 'EIP-155: the list the name comes from',
     networkNamed:
       'Chain ID {chainId}, the number that identifies the network: {name}, as named in EIP-155.',
   },
@@ -191,8 +192,9 @@ export default {
     yes: 'The answer is yes: once submitted, the signature lets the address labelled "{spender}" spend the DAI held by the address labelled "{holder}", with no limit on the amount.',
     no: 'The answer is no: once submitted, the signature removes the permission of the address labelled "{spender}" to spend the DAI held by the address labelled "{holder}".',
     unread: 'We could not read the yes-or-no answer in this request, so we do not say which it is.',
+    expiryZeroNotable: "The expiry in this request is zero. By DAI's source code, the contract does not check the deadline in that case.",
     expiryZero:
-      'The expiry is zero. This contract does not check the time when the expiry is zero, so the signature has no deadline.',
+      "The expiry is zero. By DAI's source code, the contract does not check the time when the expiry is zero, so the signature has no deadline.",
     rejectsLate: "DAI's source code rejects a signature submitted after its deadline. The contract compares the deadline with the network's time, not with your device's clock.",
   },
 
@@ -228,20 +230,25 @@ export default {
     'erc1155-criteria': 'Item of an ERC-1155 collection, chosen by a criterion instead of an ID: address of the collection',
     tokenId: 'Token ID',
     anyItem: 'The criterion is zero, which means any item of this collection.',
-    amountStart: 'Amount when the order begins (exact value in the request)',
-    amountEnd: 'Amount when the order ends (exact value in the request)',
+    amountStart: 'Amount when the order begins (value from the request, shown in base 10)',
+    amountEnd: 'Amount when the order ends (value from the request, shown in base 10)',
     starts: 'Order starts',
     ends: 'Order ends',
+    // Said at the top of the answer as well as next to the item or the time.
+    anyItemNotable: 'The order names an item by a criterion instead of an ID, and the criterion is zero, which means any item of that collection.',
+    endLargest: 'The end time of this order is the largest number its field can hold.',
     endPassed: "By your device's clock, the end time of this order has already passed.",
   },
 
   amount: {
-    exact: "Amount, exactly as written in the request (in the token's smallest units)",
-    count: 'Exact number in the request',
+    exact: "Amount from the request, shown in base 10 (in the token's smallest units)",
+    count: 'Number from the request, shown in base 10',
     decimalsUnknown: 'We do not know how many decimals this token has. Two examples of what the amount would be:',
     assumed: 'If the token has {decimals} decimals: {amount}. That is an assumption, not a fact.',
     stated: 'With the number of decimals you entered ({decimals}): {amount}. The result is only as accurate as that number.',
     largest: 'This is the largest number this field can hold. Nothing larger fits in it.',
+    // Where a number would stand in "A → B", for a side that is not converted.
+    largestInline: 'the largest number the field can hold (not converted)',
     largestNotable: 'The amount in this request is the largest number its field can hold.',
     severalTokens:
       'This request involves more than one token. The number of decimals is set by each token, is not in the request, and may differ from one token to the next. So there is no field here for entering a single number for all the amounts.',

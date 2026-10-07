@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { respond } from '../src/explain.js';
+import { EIP_155 } from '../src/networks.js';
 import en from '../src/texts/en.js';
 import ru from '../src/texts/ru.js';
 import * as published from './fixtures/published-types.js';
@@ -86,6 +87,7 @@ const options = (locale, decimals) => ({ now: NOW, locale, timeZone: 'UTC', deci
 function entryLines(entry) {
   if (typeof entry === 'string') return [entry];
   if (entry.heading) return [entry.heading];
+  if (entry.link) return [entry.link.text];
   return [entry.label, ...(entry.value === undefined ? [] : [entry.value]), ...(entry.notes ?? []), ...(entry.sub ?? []).flatMap(entryLines)];
 }
 function lines(answer) {
@@ -125,7 +127,13 @@ test('the main sentence is short and holds no address and no number from the req
 test('no sentence has an address inside it: an address stands alone under its label', () => {
   const sentences = (entries) =>
     entries.flatMap((entry) =>
-      typeof entry === 'string' ? [entry] : entry.heading ? [entry.heading] : [entry.label, ...(entry.notes ?? []), ...sentences(entry.sub ?? [])],
+      typeof entry === 'string'
+        ? [entry]
+        : entry.heading
+          ? [entry.heading]
+          : entry.link
+            ? [entry.link.text]
+            : [entry.label, ...(entry.notes ?? []), ...sentences(entry.sub ?? [])],
     );
   for (const [name, text] of Object.entries(REQUESTS)) {
     const answer = respond(text, en, options('en'));
@@ -174,7 +182,8 @@ test('a deadline that has passed is said straight under the main sentence, and n
   ]);
   // In a batch a passed expiration stays next to its token.
   assert.deepEqual(facts(respond(batch, en, { ...options('en'), now: NOW + 86400 * 500 })), [en.time.signatureDeadlinePassed]);
-  assert.deepEqual(facts(respond(seaport, en, { ...options('en'), now: NOW + 86400 * 2 })), [en.seaport.endPassed]);
+  // The test order has an item chosen by a criterion of zero: that is said at the top too.
+  assert.deepEqual(facts(respond(seaport, en, { ...options('en'), now: NOW + 86400 * 2 })), [en.seaport.anyItemNotable, en.seaport.endPassed]);
   assert.deepEqual(respond(erc2612('1'), en, { ...options('en'), now: NOW + 7200 }).notable, [
     { text: en.time.signatureDeadlinePassed, note: en.erc2612.rejectsLate },
   ]);
@@ -186,8 +195,9 @@ test('a deadline that has passed is said straight under the main sentence, and n
   assert.deepEqual(respond(dai(true, '5'), en, options('en')).notable, [
     { text: en.time.signatureDeadlinePassed, note: en.dai.rejectsLate },
   ]);
-  assert.deepEqual(respond(dai(true, '0'), en, options('en')).notable, []);
-  assert.deepEqual(respond(seaport, en, options('en')).notable, []);
+  // It is said at the top as what it is, no deadline, by the contract's own source.
+  assert.deepEqual(respond(dai(true, '0'), en, options('en')).notable, [{ text: en.dai.expiryZeroNotable }]);
+  assert.deepEqual(respond(seaport, en, options('en')).notable, [{ text: en.seaport.anyItemNotable }]);
 });
 
 test('the exact amount stands right under its label, with everything said about it', () => {
@@ -394,5 +404,83 @@ test('what to compare in the wallet is named for the kinds we explain, and for t
     for (const kind of Object.keys(texts.form)) assert.equal(typeof texts.compare[kind], 'string', kind);
     assert.equal(respond(permitSingle, texts, options('en')).compare, texts.compare['permit2-permit-single']);
     assert.equal(respond(mail, texts, options('en')).compare, undefined);
+  }
+});
+
+// What a person must not miss in a Seaport order stands at the top of the answer,
+// not only as a line inside an item: an amount that is the largest its field can
+// hold, a criterion of zero (any item of the collection), an end time that is the
+// largest number, and in DAI an expiry of zero (no deadline).
+test('the things the concept names as the costly ones are said at the top, for Seaport and DAI as for the rest', () => {
+  const LARGEST = (2n ** 256n - 1n).toString();
+  const withMessage = (change) => {
+    const order = JSON.parse(seaport);
+    change(order.message);
+    return JSON.stringify(order);
+  };
+  for (const [language, texts] of [['en', en], ['ru', ru]]) {
+    const opts = options(language);
+    // A criterion of zero.
+    assert.deepEqual(facts(respond(seaport, texts, opts)), [texts.seaport.anyItemNotable]);
+    // The same fact for two such items is said once.
+    const two = respond(withMessage((m) => (m.offer = [item('4', '1'), item('5', '1')])), texts, opts);
+    assert.deepEqual(facts(two), [texts.seaport.anyItemNotable]);
+
+    // An amount that is the largest its field holds: an ERC-20 item ranging up to it,
+    // and a single amount of an item of a collection.
+    const range = respond(withMessage((m) => (m.consideration = [{ ...item('1', '5', LARGEST), recipient: A }])), texts, opts);
+    assert.ok(range.notable.some((fact) => fact.text === texts.amount.largestNotable && fact.note === texts.amount.largestUnexplained));
+    const single = respond(withMessage((m) => (m.consideration = [{ ...item('2', LARGEST), recipient: A }])), texts, opts);
+    assert.ok(single.notable.some((fact) => fact.text === texts.amount.largestNotable && fact.note === undefined));
+
+    // The line that converts a range with a side that is not converted has no
+    // sentence in place of the number, and so no double full stop.
+    const converted = lines(range).filter((line) => line.includes('→'));
+    assert.ok(converted.length > 0);
+    for (const line of converted) {
+      assert.ok(line.includes(texts.amount.largestInline), line);
+      assert.ok(!line.includes('..'), line);
+    }
+
+    // An end time that is the largest number.
+    const endless = respond(withMessage((m) => (m.endTime = LARGEST)), texts, opts);
+    assert.ok(facts(endless).includes(texts.seaport.endLargest));
+
+    // DAI: an expiry of zero is no deadline, by the contract's own source.
+    assert.deepEqual(facts(respond(dai(true), texts, opts)), [texts.dai.expiryZeroNotable]);
+    assert.deepEqual(facts(respond(dai(true, String(NOW + 3600)), texts, opts)), []);
+  }
+});
+
+test('a network is named only from the list in EIP-155, and the name comes with a link to that list at a fixed commit', () => {
+  assert.match(EIP_155, /^https:\/\/github\.com\/ethereum\/EIPs\/blob\/[0-9a-f]{40}\/EIPS\/eip-155\.md$/);
+  // A string has a method called link, so a string is told apart first.
+  const links = (answer) => answer.mechanics.filter((entry) => typeof entry === 'object' && entry.link);
+  for (const texts of [en, ru]) {
+    // Chain ID 1 is in the list: named, with the link.
+    assert.deepEqual(links(respond(permitSingle, texts, options('en'))), [{ link: { text: texts.domain.networkSource, href: EIP_155 } }]);
+    // Chain ID 137 is not: the number alone, and nothing to link to.
+    const unnamed = respond(permitSingle.replace('"chainId": "1"', '"chainId": "137"'), texts, options('en'));
+    assert.deepEqual(links(unnamed), []);
+    assert.ok(lines(unnamed).includes(texts.domain.network.replace('{chainId}', '137')));
+  }
+});
+
+
+test('the note that we do not know what a token does with the largest amount stays whichever item comes first', () => {
+  const LARGEST = (2n ** 256n - 1n).toString();
+  const recipient = (fields) => ({ ...fields, recipient: A });
+  for (const order of [
+    [item('3', LARGEST), item('1', LARGEST)],
+    [item('1', LARGEST), item('3', LARGEST)],
+  ]) {
+    const message = JSON.parse(seaport);
+    message.message.consideration = order.map(recipient);
+    for (const texts of [en, ru]) {
+      const answer = respond(JSON.stringify(message), texts, options('en'));
+      const said = answer.notable.filter((fact) => fact.text === texts.amount.largestNotable);
+      assert.equal(said.length, 1);
+      assert.equal(said[0].note, texts.amount.largestUnexplained);
+    }
   }
 });

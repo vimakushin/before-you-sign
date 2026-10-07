@@ -311,6 +311,12 @@ li {
   color: var(--muted);
 }
 
+/* A link is in the colour of the text, underlined: the browser's own blue would
+   be a colour with no meaning of ours. */
+main a {
+  color: inherit;
+}
+
 footer {
   margin-top: 24px;
   color: var(--muted);

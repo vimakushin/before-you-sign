@@ -21,8 +21,9 @@
 //   domain, message  the fields as parsed, for showing the request as written.
 //
 // `details` and `mechanics` are lists of entries. An entry is a sentence, or
-// { heading }, or { label, value, notes, sub }: a value from the request on a
-// line of its own, with a label saying what it is. An address is forty
+// { heading }, or { link: { text, href } }, or { label, value, notes, sub }: a
+// value from the request on a line of its own, with a label saying what it is.
+// A link goes to a page fixed in the code, never to anything from the request. An address is forty
 // characters with no spaces, and nobody reads one in the middle of a
 // sentence, so no sentence here has an address or an amount inside it.
 
@@ -30,7 +31,7 @@ import { parseRequest } from './parse.js';
 import { recognise } from './known-types.js';
 import { notChecked } from './unknowns.js';
 import { readAmount, readCount, readTime, readInteger, isAddress, notRead, losesDigits } from './values.js';
-import { networkName } from './networks.js';
+import { networkName, EIP_155 } from './networks.js';
 
 // `texts` is one of the files in texts/; `now` is the current time in
 // seconds; `decimals` is what the person entered, if anything; `locale` and
@@ -169,7 +170,9 @@ function network(parsed, { t }) {
   const chain = declared(parsed.domain, 'chainId');
   if (chain?.type !== 'uint256' || notRead(chain)) return [];
   const name = networkName(chain.value);
-  return [fill(name ? t.domain.networkNamed : t.domain.network, { chainId: chain.value, name })];
+  const line = fill(name ? t.domain.networkNamed : t.domain.network, { chainId: chain.value, name });
+  // A name is given only from EIP-155's list, so it comes with a link to it.
+  return name ? [line, { link: { text: t.domain.networkSource, href: EIP_155 } }] : [line];
 }
 
 // ------------------------------------------------------------------- roles
@@ -241,6 +244,9 @@ function explained(parsed, known, say) {
       const allowed = member('allowed');
       const readable = !allowed.unread && typeof allowed.value === 'boolean';
       const expiry = member('expiry');
+      // A zero expiry is "no deadline" by the contract's own source, and that
+      // is among the things said at the top of the answer.
+      if (readTime(expiry, say.now)?.zero) notable.push({ text: t.dai.expiryZeroNotable });
       return {
         main: !readable ? t.main.daiUnread : allowed.value ? t.main.daiYes : t.main.daiNo,
         notable,
@@ -325,17 +331,25 @@ function explained(parsed, known, say) {
         (fields) => readInteger(declared(fields, 'itemType')?.value) === 1n,
       );
       const each = forTokens(say, erc20.map((fields) => declared(fields, 'token') ?? {}));
-      const items = (name) => listed(name).map((fields) => itemEntry(fields, known, each));
+      // The items are drawn before the answer is put together, because drawing
+      // them is what fills `notable` with what must not be missed in them.
+      const items = (name) => listed(name).map((fields) => itemEntry(fields, known, each, notable));
+      const offered = items('offer');
+      const considered = items('consideration');
+      // An end time that is the largest number its field can hold: arithmetic
+      // only, as with any time. The source says nothing of what Seaport does
+      // with such a time.
+      if (readTime(member('endTime'), say.now)?.largest) once(notable, { text: t.seaport.endLargest });
       return {
         main: t.main.seaport,
         notable,
         details: [
           ...(each.several ? [t.amount.severalTokens] : []),
           { heading: t.seaport.offer },
-          ...items('offer'),
+          ...offered,
           t.seaport.offerRecipient,
           { heading: t.seaport.consideration },
-          ...items('consideration'),
+          ...considered,
           t.seaport.extended,
           timeEntry(t.seaport.starts, member('startTime'), say).entry,
           ending(t.seaport.ends, member('endTime'), t.seaport.endPassed),
@@ -357,9 +371,21 @@ function expirationEntry(field, say, notable) {
   return read.entry;
 }
 
+// Says a notable fact once, however many items it holds for. If it holds for
+// an item that has a note (an ERC-20, whose token we say we know nothing about)
+// and for one that has none, the note is kept: which item comes first must not
+// decide whether the person is told we do not know.
+function once(notable, item) {
+  const already = notable.find((fact) => fact.text === item.text);
+  if (already) already.note ??= item.note;
+  else notable.push(item);
+}
+
 // One item of a Seaport order: what it is, with its address, and under it
-// the ID, the amount and who receives it.
-function itemEntry(fields, known, say) {
+// the ID, the amount and who receives it. What must not be missed about an
+// item (a criterion of zero, an amount that is the largest its field can hold)
+// is also put into `notable`, which the page shows at the top of the answer.
+function itemEntry(fields, known, say, notable) {
   const { t } = say;
   const member = (name) => declared(fields, name) ?? {};
   const kind = known.itemKinds[Number(readInteger(member('itemType').value) ?? -1)];
@@ -368,7 +394,10 @@ function itemEntry(fields, known, say) {
   const id = member('identifierOrCriteria');
   const entry = { label: t.seaport[kind], notes: [], sub: [] };
   if (kind !== 'native') entry.value = shown(member('token'), t);
-  if (kind.endsWith('criteria') && readInteger(id.value) === 0n) entry.notes.push(t.seaport.anyItem);
+  if (kind.endsWith('criteria') && readInteger(id.value) === 0n) {
+    entry.notes.push(t.seaport.anyItem);
+    once(notable, { text: t.seaport.anyItemNotable });
+  }
   if (kind === 'erc721' || kind === 'erc1155') entry.sub.push({ label: t.seaport.tokenId, value: shown(id, t) });
 
   // Only an ERC-20 amount is converted by decimals: see known-types.js.
@@ -377,13 +406,21 @@ function itemEntry(fields, known, say) {
   const start = member('startAmount');
   const end = member('endAmount');
   const [from, to] = [read(start), read(end)];
+  // Only an ERC-20 item has a token whose behaviour with such an amount we
+  // say we do not know; for the others the arithmetic alone is said.
+  const largestFact = { text: t.amount.largestNotable, note: convert ? t.amount.largestUnexplained : undefined };
   if (from === null || to === null || from.exact === to.exact) {
-    entry.sub.push(amountEntry(from === null ? start : end, convert, say).entry);
+    const single = amountEntry(from === null ? start : end, convert, say);
+    if (single.largest) once(notable, largestFact);
+    entry.sub.push(single.entry);
   } else {
+    if (from.largest || to.largest) once(notable, largestFact);
     // Two amounts, and each is converted like any other: the number of
-    // decimals the person entered, or the two marked guesses.
+    // decimals the person entered, or the two marked guesses. A side that is
+    // the largest its field can hold is not converted, and is said so in a
+    // few words where its number would stand.
     const notes = [];
-    const pair = (a, b) => `${a ?? t.amount.largest} → ${b ?? t.amount.largest}`;
+    const pair = (a, b) => `${a ?? t.amount.largestInline} → ${b ?? t.amount.largestInline}`;
     if (from.amount !== undefined || to.amount !== undefined) {
       notes.push(fill(t.amount.stated, { decimals: say.decimals, amount: pair(from.amount, to.amount) }));
     } else if (from.assumed || to.assumed) {
@@ -392,9 +429,10 @@ function itemEntry(fields, known, say) {
         notes.push(fill(t.amount.assumed, { decimals, amount: pair(from.assumed?.[index].amount, to.assumed?.[index].amount) }));
       }
     }
+    const largestNote = (side) => (side.largest ? [t.amount.largest] : []);
     entry.sub.push(
-      { label: t.seaport.amountStart, value: String(from.exact) },
-      { label: t.seaport.amountEnd, value: String(to.exact), notes, converted: convert, decimals: convert && !say.several },
+      { label: t.seaport.amountStart, value: String(from.exact), notes: largestNote(from) },
+      { label: t.seaport.amountEnd, value: String(to.exact), notes: [...largestNote(to), ...notes], converted: convert, decimals: convert && !say.several },
     );
   }
   const recipient = declared(fields, 'recipient');

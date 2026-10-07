@@ -227,6 +227,18 @@ function valueNode(tag, text, className) {
 // request on a line of its own under a label that says what it is.
 function drawEntry(item, placeField) {
   if (typeof item === 'string') return element('p', item);
+  // The one link on the page that leaves it. Its address is set in the code
+  // (networks.js), never taken from the request, and it opens in a new tab so
+  // that the request in the box is still there when the person comes back.
+  if (item.link) {
+    const anchor = element('a', item.link.text);
+    anchor.href = item.link.href;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    const line = element('p');
+    line.append(anchor);
+    return line;
+  }
   if (item.heading) return element('h3', item.heading);
   const block = element('div', undefined, 'detail');
   block.append(element('p', item.label, 'label'));

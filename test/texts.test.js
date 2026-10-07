@@ -27,9 +27,14 @@ test('the two languages have the same texts with the same blanks to fill', () =>
 // Words that turn a translation into a verdict. This is a tripwire, not a
 // proof: a sentence can judge without any of them. "Verified" is here because
 // block explorers use it to mean "the source code is published", which is not
-// what this project compares.
+// what this project compares. "Offer", "consideration" and "allowed" are words
+// of Seaport and DAI that read differently in a sentence than in the protocol,
+// "unfamiliar" reads as "suspicious", and "parsed" and "unread" are the code's
+// words for its own work. The Russian list has no counterparts for "offer" and
+// "allowed": the words that would stand for them ("предложение", "разрешение")
+// are ordinary words the texts need.
 const VERDICT_WORDS = {
-  en: /\b(safe\w*|unsafe|secure|insecure|danger\w*|scam\w*|fraud\w*|phishing|malicious|harmful|suspicious|legit\w*|official|authentic|reliable|clean|\w*trust\w*|verified|unverified|fake|genuine|risky|harmless|known|unknown|recognis\w*|recogniz\w*)\b/i,
+  en: /\b(safe\w*|unsafe|secure|insecure|danger\w*|scam\w*|fraud\w*|phishing|malicious|harmful|suspicious|legit\w*|official|authentic|reliable|clean|\w*trust\w*|verif\w*|unverif\w*|unfamiliar|offer\w*|consideration|allowed|parsed|unread|fake|genuine|risky|harmless|known|unknown|recognis\w*|recogniz\w*)\b/i,
   ru: /безопасн|опасн|мошенн|обман|афер|фишинг|подозрит|поддельн|подделк|над[её]жн|доверенн|проверенн|сверен|настоящ|вредонос|рискован|угроз|(?<![а-яё])чист|знаком|опознан|известн/i,
 };
 
