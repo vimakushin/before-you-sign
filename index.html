@@ -31,20 +31,23 @@
     </header>
 
     <main>
-      <label for="request" id="request-label"></label>
-      <textarea id="request" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-      <!-- Each fills the box with a request the project made up and shows its
-           answer. The text on them comes from the texts files. -->
-      <div id="examples">
-        <button type="button" id="example-largest"></button>
-        <button type="button" id="example-particular"></button>
+      <!-- The box and what stands by it, on one card. -->
+      <div class="card">
+        <label for="request" id="request-label"></label>
+        <textarea id="request" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <!-- Each fills the box with a request the project made up and shows its
+             answer. The text on them comes from the texts files. -->
+        <div id="examples">
+          <button type="button" id="example-largest"></button>
+          <button type="button" id="example-particular"></button>
+        </div>
+        <!-- A long request scrolls out of sight inside the box. This line says
+             that the text is there. -->
+        <p id="pasted"></p>
+        <!-- At the box, not at the foot of the page, and small enough that the
+             box is the first thing seen. -->
+        <p id="keys"></p>
       </div>
-      <!-- A long request scrolls out of sight inside the box. This line says
-           that the text is there. -->
-      <p id="pasted"></p>
-      <!-- At the box, not at the foot of the page, and small enough that the
-           box is the first thing seen. -->
-      <p id="keys"></p>
 
       <!-- The answer comes straight after the box, so that it is on screen
            without scrolling even on a small phone. -->
