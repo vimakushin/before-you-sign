@@ -13,6 +13,7 @@
 
 import { respond } from './explain.js';
 import { validDecimals } from './values.js';
+import { example } from './example.js';
 import en from './texts/en.js';
 import ru from './texts/ru.js';
 
@@ -48,6 +49,13 @@ function showFixedTexts() {
   document.title = page.title;
   byId('title').textContent = page.title;
   byId('lead').textContent = page.lead;
+  byId('when').textContent = page.when;
+  byId('how').textContent = page.how;
+  byId('example-largest').textContent = page.exampleLargest;
+  byId('example-particular').textContent = page.exampleParticular;
+  byId('gift-text').textContent = page.gift;
+  byId('gift-address').textContent = page.giftAddress;
+  byId('gift-apart').textContent = page.giftApart;
   byId('request-label').textContent = page.inputLabel;
   decimalsLabel.textContent = page.decimalsLabel;
   byId('keys').textContent = page.keys;
@@ -61,6 +69,11 @@ function showFixedTexts() {
 // recovery phrase until something else is typed. The notice has to survive a
 // change of language, and the text that caused it is gone, as it should be.
 let emptiedForSecretWords = false;
+
+// True from a press of an Example button until the box is typed in. While it
+// is true the answer starts with a line saying that the request is an example,
+// and the line follows a change of language like the rest of the answer.
+let showingExample = false;
 
 function showAnswer({ typed = false, scroll = false } = {}) {
   const lang = language();
@@ -84,6 +97,7 @@ function showAnswer({ typed = false, scroll = false } = {}) {
   try {
     result = respond(request.value, texts, options(lang, texts));
     answer.append(...(result.refused ? refusal(result) : explanation(result, texts, true)));
+    if (showingExample && !result.refused) answer.prepend(element('p', texts.page.exampleNote, 'example'));
   } catch (error) {
     // Drawing a request nested very deep can run out of stack the same way
     // reading it can. The answer is the same refusal, not a blank page.
@@ -263,10 +277,25 @@ function asWritten(value) {
   return typeof value === 'string' ? value : (JSON.stringify(value) ?? '');
 }
 
-request.addEventListener('input', () => showAnswer({ typed: true, scroll: true }));
+request.addEventListener('input', () => {
+  showingExample = false;
+  showAnswer({ typed: true, scroll: true });
+});
+for (const kind of ['largest', 'particular']) {
+  byId(`example-${kind}`).addEventListener('click', () => {
+    request.value = example(kind, Date.now() / 1000);
+    showingExample = true;
+    showAnswer({ typed: true, scroll: true });
+  });
+}
 decimals.addEventListener('input', showConversions);
 addEventListener('hashchange', () => {
   showFixedTexts();
   showAnswer();
 });
+// The author's address for gifts, in groups like an address from a request.
+// It is the one address on the page that did not come from a request, and the
+// last block of the page sets it apart from them in place and in type. It does
+// not depend on the language, so it is drawn once.
+byId('gift-value').replaceWith(valueNode('p', '0xf65e04f7b5761b6bdc42726a54ee467736d0ca74', 'gift-value'));
 showFixedTexts();

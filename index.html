@@ -26,11 +26,19 @@
       </nav>
       <h1 id="title"></h1>
       <p id="lead"></p>
+      <p id="when"></p>
+      <p id="how"></p>
     </header>
 
     <main>
       <label for="request" id="request-label"></label>
       <textarea id="request" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <!-- Each fills the box with a request the project made up and shows its
+           answer. The text on them comes from the texts files. -->
+      <div id="examples">
+        <button type="button" id="example-largest"></button>
+        <button type="button" id="example-particular"></button>
+      </div>
       <!-- A long request scrolls out of sight inside the box. This line says
            that the text is there. -->
       <p id="pasted"></p>
@@ -54,5 +62,14 @@
     <footer>
       <p id="not-sent"></p>
     </footer>
+
+    <!-- Apart from the answer and from the footer on purpose: this is the one
+         address on the page that is not from a request. -->
+    <aside id="gift">
+      <p id="gift-text"></p>
+      <p id="gift-address" class="label"></p>
+      <p id="gift-value"></p>
+      <p id="gift-apart"></p>
+    </aside>
   </body>
 </html>

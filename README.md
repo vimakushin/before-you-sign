@@ -8,6 +8,10 @@ Paste the request your wallet shows before you press "Sign". For the request typ
 
 [Русская версия этого файла](README.ru.md)
 
+![The first part of the page's answer to its first built-in example, in a browser window the width of a phone: one sentence on what the signature gives, then each value from the request on a line of its own.](docs/answer-en.png)
+
+The screenshot is cut off after the details. Below them the page goes on with how the request works, the list of what it has not checked, and the request as written. The request in it is an example put together by the project, not one taken from a wallet.
+
 ## Why signing requests
 
 A common way to protect a wallet's user is to simulate a transaction and show what it would do. A signing request (EIP-712 typed data, the data behind `eth_signTypedData_v4`) is not a transaction. Signing it executes nothing. For the requests this page reads, it gives someone the right to do something later. There is no transaction to simulate.

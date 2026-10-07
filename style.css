@@ -29,9 +29,11 @@
 
 body {
   margin: 0 auto;
-  padding: 1rem;
-  max-width: 44rem;
-  font: 1rem/1.5 system-ui, sans-serif;
+  padding: 1.25rem 1rem 3rem;
+  /* About sixty characters to a line: a line of text is read, a longer one
+     is searched. */
+  max-width: 40rem;
+  font: 1rem/1.6 system-ui, sans-serif;
   color: var(--ink);
   background: var(--paper);
   /* Addresses and 78-digit numbers have no spaces to break at. Without this
@@ -55,13 +57,31 @@ nav a[aria-current='true'] {
 }
 
 h1 {
-  margin: 0.5rem 0 0;
-  font-size: 1.5rem;
+  margin: 1.5rem 0 1rem;
+  font-size: 2rem;
+  line-height: 1.2;
+}
+
+/* What the page is, when it is for, how to get the request: reading before
+   the box, set apart from the box by space and a rule. */
+header {
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+#lead {
+  font-size: 1.1rem;
+}
+
+#how {
+  color: var(--quiet);
 }
 
 h2 {
-  margin: 1.5rem 0 0.5rem;
-  font-size: 1.1rem;
+  margin: 2.25rem 0 0.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+  font-size: 1.15rem;
 }
 
 p {
@@ -70,7 +90,7 @@ p {
 
 label {
   display: block;
-  margin-top: 1rem;
+  margin-top: 1.75rem;
   font-weight: 600;
 }
 
@@ -100,6 +120,37 @@ input {
   max-width: 8rem;
 }
 
+textarea {
+  min-height: 8rem;
+}
+
+#examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+button {
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* The line that says the request on screen is an example. Set by a rule, the
+   same plain one as elsewhere, so it is seen before the sentence under it. */
+.example {
+  margin: 1.5rem 0 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--quiet);
+  font-size: 0.9rem;
+}
+
 h3 {
   margin: 1.25rem 0 0.25rem;
   font-size: 1rem;
@@ -126,7 +177,7 @@ h3 {
 /* The answer to "what am I being asked to sign": one sentence, first and
    largest, readable before anything else on the screen. */
 .main {
-  margin: 1rem 0 0.75rem;
+  margin: 1.5rem 0 1rem;
   padding-left: 0.75rem;
   border-left: 4px solid var(--ink);
   font-size: 1.35rem;
@@ -210,9 +261,30 @@ li {
 }
 
 footer {
-  margin-top: 2rem;
+  margin-top: 3rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--rule);
   color: var(--quiet);
   font-size: 0.9rem;
+}
+
+/* A gift to the author, far from the answer and from the footer. It does not
+   use the type of the addresses above, which are shown in the page's ink at
+   full size: this one is small and quiet, and the text over it says what it
+   is. */
+#gift {
+  margin-top: 4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--quiet);
+  font-size: 0.9rem;
+}
+
+#gift .label {
+  margin-bottom: 0;
+}
+
+.gift-value {
+  margin: 0.1rem 0 0.5rem;
+  font: 0.9rem/1.4 var(--mono);
 }
