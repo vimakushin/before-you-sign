@@ -24,6 +24,7 @@ export default {
     lead: 'A website can ask your wallet for a signature instead of a transaction. A wallet may show that request as a block of data, with addresses in hexadecimal and amounts in the token\'s smallest units. This page describes what the request says, as far as we can read it. It does not tell you whether to sign it.',
     when: 'Use it when your wallet shows you such a request and you want to read what it says before you sign.',
     how: 'To get the request: if your wallet lets you copy it as text, copy all of it and paste it below. If it does not, there is nothing to paste.',
+    replaceAsk: 'The box already has text. Replace it with the example?',
     exampleLargest: 'Example: no limit on the amount',
     exampleParticular: 'Example: a particular amount',
     exampleNote:

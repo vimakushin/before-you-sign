@@ -77,6 +77,12 @@ The page makes no network requests while it works, and a Content-Security-Policy
 
 Everything that comes from a pasted request is put on the page as text, not as markup.
 
+## Gifts
+
+The bottom of the page has a line with the author's address for voluntary gifts in USDT on BNB Smart Chain (BEP-20). Nothing needs to be sent. The same address is written here, so that the two can be compared. The history of this repository shows when the address in this file was last changed:
+
+`0xF65e04f7b5761b6BDc42726A54eE467736D0ca74`
+
 ## Running it
 
 ```

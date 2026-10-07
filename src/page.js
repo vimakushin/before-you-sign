@@ -283,6 +283,10 @@ request.addEventListener('input', () => {
 });
 for (const kind of ['largest', 'particular']) {
   byId(`example-${kind}`).addEventListener('click', () => {
+    // Text in the box is the person's request, and getting it out of the
+    // wallet again is the very trouble the buttons are there to spare. An
+    // example already in the box is not theirs, and is replaced without asking.
+    if (request.value.trim() !== '' && !showingExample && !confirm(LANGUAGES[language()].page.replaceAsk)) return;
     request.value = example(kind, Date.now() / 1000);
     showingExample = true;
     showAnswer({ typed: true, scroll: true });
@@ -297,5 +301,13 @@ addEventListener('hashchange', () => {
 // It is the one address on the page that did not come from a request, and the
 // last block of the page sets it apart from them in place and in type. It does
 // not depend on the language, so it is drawn once.
-byId('gift-value').replaceWith(valueNode('p', '0xf65e04f7b5761b6bdc42726a54ee467736d0ca74', 'gift-value'));
+//
+// Written with the capital letters of the EIP-55 checksum. The page tells a
+// person that those letters are a checksum against typing mistakes, and its
+// own address without them would show the opposite. The checksum was computed
+// by the owner on 7 October 2026, and the calculation was checked on the
+// address given in the text of EIP-55 itself. The same address, in the same
+// letters, is in both READMEs: a copy kept in the repository's history that a
+// changed page would disagree with.
+byId('gift-value').replaceWith(valueNode('p', '0xF65e04f7b5761b6BDc42726A54eE467736D0ca74', 'gift-value'));
 showFixedTexts();
