@@ -32,6 +32,12 @@ export function readInteger(value) {
 // hash, which this project does not compute, so an address with a broken
 // checksum is read like any other; the list in unknowns.js says so.
 // https://github.com/ethereum/ERCs/blob/365b4c02879f3e882b91281d42b4f57b406205e9/ERCS/erc-55.md
+//
+// The standard is called ERC-55, and that is settled: its file in the EIPs
+// repository holds only "category: ERC", "status: Moved" and a link to the
+// ERCs repository, where the text lives under that name.
+// https://github.com/ethereum/EIPs/blob/25cdf1d059778236e28bf22d752ca48a35af91f6/EIPS/eip-55.md
+// Checked by the owner and again by Claude, 7 October 2026.
 export function isAddress(value) {
   return typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value);
 }

@@ -309,11 +309,11 @@ addEventListener('hashchange', () => {
 // last block of the page sets it apart from them in place and in type. It does
 // not depend on the language, so it is drawn once.
 //
-// Written with the capital letters of the EIP-55 checksum. The page tells a
+// Written with the capital letters of the ERC-55 checksum. The page tells a
 // person that those letters are a checksum against typing mistakes, and its
 // own address without them would show the opposite. The checksum was computed
 // by the owner on 7 October 2026, and the calculation was checked on the
-// address given in the text of EIP-55 itself. The same address, in the same
+// address given in the text of ERC-55 itself. The same address, in the same
 // letters, is in both READMEs: a copy kept in the repository's history that a
 // changed page would disagree with.
 byId('gift-value').replaceWith(valueNode('p', '0xF65e04f7b5761b6BDc42726A54eE467736D0ca74', 'gift-value'));

@@ -89,6 +89,7 @@ export default {
     'token-genuine': 'Whether the token at this address is the one you expect.',
     'contract-code':
       "The code at the contract's address. We have not read it. Where we explain a field, we repeat what the protocol's own published source says.",
+    // ERC-55, not EIP-55: see the note in values.js.
     'address-checksum':
       'The mix of capital and lowercase letters in addresses. By ERC-55 it works as a checksum against typing mistakes. We do not check it.',
     'meaning-of-fields': 'What the fields of this request mean. We show them as they are written.',
